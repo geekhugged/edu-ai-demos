@@ -121,3 +121,122 @@ shift (covariate shift) when the season or promo policy changes, and a
 "too-smooth" zero-shot that underestimates rare spikes — which is exactly what
 fine-tuning fixes.
 """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deep-dive "presentation": the knobs and the fine-tuning process
+# ─────────────────────────────────────────────────────────────────────────────
+
+FT_OVERVIEW = r"""
+### ① Zero-shot vs Fine-tuning — two very different operations
+
+|  | 🧊 Zero-shot | 🔧 Fine-tuning |
+|---|---|---|
+| **When** | inference only | train first, *then* infer |
+| **Weights** | frozen | updated (some or all) |
+| **Data needed** | your history as *context* | a training set of your series |
+| **Cost** | one forward pass | minutes–hours on a GPU |
+| **The knobs are…** | sampling & context | optimizer + *what to train* |
+
+- **Zero-shot** = "prompt" the frozen model with your history and read off the
+  continuation. You only shape *how you read* a fixed model.
+- **Fine-tuning** = actually move the weights so the general prior fits *your*
+  data, then run it like zero-shot.
+
+The next slides list the knobs for each, then exactly **what** fine-tuning changes.
+"""
+
+ZEROSHOT_KNOBS = r"""
+### 🧊 Zero-shot knobs — inference only, no weights change
+
+These are the `predict(...)` parameters of a Chronos pipeline.
+
+| Knob | Typical | What it controls / can affect |
+|---|---|---|
+| **Context length** | 256–2048 pts | how much past the model sees. Too short → it can't "see" a weekly/yearly cycle and the forecast flattens. |
+| **Prediction length** (horizon) | task-specific | how far ahead. Longer horizons compound error and widen intervals. |
+| **num_samples** | 20–100 | how many future trajectories are sampled → smoothness of the P10/P50/P90 bands (and speed). |
+| **temperature** | ~1.0 | randomness of each sampled token. ↑ = wider, more diverse futures; ↓ = sharper, can under-cover. |
+| **top_k / top_p** | k≈50 / p≈1.0 | truncate the next-token distribution. Lower = safer/typical values, drops rare spikes. |
+| **Quantization bins (B)** | 4096 *(fixed)* | value resolution — baked into the pretrained model, not tuned per run. |
+| **Scaling** | automatic (mean) | normalizes the series before tokenizing. If context scale ≠ future scale, the forecast is biased. |
+
+👉 None of these change the model — they shape **how you read** a fixed model.
+"""
+
+FINETUNE_KNOBS = r"""
+### 🔧 Fine-tune knobs — these actually change the weights
+
+Training hyperparameters (Hugging-Face-Trainer style).
+
+| Knob | Typical | What it controls / can affect |
+|---|---|---|
+| **Learning rate** | 1e-5 – 1e-4 | step size of adaptation. Too high → instability & *catastrophic forgetting* of the general prior; too low → barely adapts. **The single most important knob.** |
+| **Steps / epochs** | hundreds–few k steps | how long you train. Too few → underfit; too many on a small set → overfit (memorizes noise). |
+| **Batch size** | 8–256 windows | gradient noise. Larger = smoother & more stable, but more GPU memory. |
+| **Warmup** | ~5–10% of steps | ramps the LR up early to avoid a destructive first step. |
+| **Weight decay** | 0 – 0.1 | regularization; higher fights overfit. |
+| **What to train** *(next slide)* | full / LoRA / head | how much of the network can move — capacity vs cost vs overfit. |
+| **LoRA rank r** | 8–64 | if using LoRA: capacity of the adapter. Higher = more expressive, more params, more overfit risk. |
+| **Loss** | cross-entropy / quantile | what you optimize — the full token distribution (CE) or specific quantiles (WQL). |
+| **Validation split** | last X% **by time** | for early stopping / model choice. Must be chronological — a random split leaks the future. |
+| **Early-stopping patience** | a few evals | stop when validation stops improving → prevents overfit. |
+"""
+
+FT_WHAT = r"""
+### 🧩 What *exactly* gets fine-tuned?
+
+**1 — Which part of the model.**
+Chronos is a **T5 encoder-decoder Transformer**. Fine-tuning nudges its weights:
+
+- **Attention projections** (Q, K, V, output) — *this is where your dataset's
+  specific patterns land*: how strongly weekends spike, that holidays matter,
+  the exact weekly/daily shape.
+- **Feed-forward (MLP) blocks** — the per-position transformations.
+- **Layer norms & biases** — cheap to move, recalibrate scale.
+- **Output (de-tokenization) head** — calibrates the predicted value
+  distribution / amplitude.
+
+**How much of that you actually train:**
+
+| Strategy | What moves | Trainable params | Trade-off |
+|---|---|---|---|
+| **Full fine-tuning** | every weight | 100% | most capacity, most GPU/RAM, highest forgetting/overfit risk on small data. (Chronos' default script.) |
+| **Parameter-efficient — LoRA / adapters** | tiny low-rank matrices injected into attention (± MLP); base **frozen** | ~0.1–1% | cheap, fast, resists forgetting; slightly lower ceiling. |
+| **Head / top-blocks only** | just the last layer(s) / output head | small | fastest, least capacity — good when data is scarce. |
+
+**2 — What is NOT learned (stays fixed):**
+- The **tokenizer** — scaling + quantization into bins is a *deterministic*
+  recipe, not trained.
+- With **LoRA/adapters**, the whole **base Transformer** is frozen; only the
+  adapters move.
+- Architecture, vocab size, layer count — fixed.
+
+> **TL;DR** fine-tuning mostly re-shapes **attention** (which past patterns to
+> rely on) and **the output head** (how big to make the numbers), starting from
+> a strong general prior.
+"""
+
+FT_EFFECTS = r"""
+### 🎚️ What each knob can affect — and how it fails
+
+- **Learning rate — the master dial.**
+  - *too high*: loss diverges, or the model **forgets** its general time-series
+    knowledge and overfits your quirks.
+  - *too low*: training "works" but the metric barely beats zero-shot.
+- **Steps / epochs — the under/overfit axis.** Track the **validation** WAPE/WQL,
+  not the training loss.
+- **What-to-train / LoRA rank — the capacity dial.** More capacity fits complex
+  patterns but overfits small datasets; low-rank LoRA is a safe default.
+- **Batch size + warmup — stability.** Tiny batches with no warmup = noisy, jumpy
+  training.
+- **Weight decay / early stopping — the overfit brakes.**
+- **Context length** (still matters after fine-tuning): the model can only use
+  patterns it can *see* — give it ≥ a couple of full seasonal cycles.
+- **Validation by time:** get this wrong (a random split) and every number is
+  optimistic — you ship a model that looks great and fails in production.
+
+**Rule of thumb:** start with **LoRA + a small learning rate + time-based
+validation + early stopping**. Reach for full fine-tuning only when you have lots
+of data and PEFT plateaus.
+"""

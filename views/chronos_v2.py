@@ -270,6 +270,28 @@ with tab_theory:
     else:
         st.markdown(theory.ADVANCED)
 
+    # ── presentation: the knobs & the fine-tuning process ──────────────────
+    st.divider()
+    st.markdown("### 🔧 Deep dive: the knobs & the fine-tuning process")
+    st.caption("A short presentation — click through the slides.")
+    preso = st.tabs([
+        "① Zero-shot vs FT",
+        "🧊 Zero-shot knobs",
+        "🔧 Fine-tune knobs",
+        "🧩 What gets fine-tuned",
+        "🎚️ Knob effects & pitfalls",
+    ])
+    with preso[0]:
+        st.markdown(theory.FT_OVERVIEW)
+    with preso[1]:
+        st.markdown(theory.ZEROSHOT_KNOBS)
+    with preso[2]:
+        st.markdown(theory.FINETUNE_KNOBS)
+    with preso[3]:
+        st.markdown(theory.FT_WHAT)
+    with preso[4]:
+        st.markdown(theory.FT_EFFECTS)
+
     st.divider()
     with st.expander("📎 Useful links and terms"):
         st.markdown(
