@@ -45,11 +45,19 @@ Chronos turns continuous values into discrete tokens in three steps:
    its bin → we get a token index, like a letter in an alphabet.
 3. From here it's an ordinary sequence of tokens, just like a sentence.
 
-**2. Architecture — a language model (T5).**
-The first version of Chronos uses an encoder-decoder transformer (the T5
-family). It predicts a probability distribution over the next token, not a
-single number. This lets us sample **many trajectories** and build confidence
-intervals (P10 / P50 / P90) rather than just a point forecast.
+*(This tokenized "language" recipe is the original Chronos. Chronos-Bolt and
+Chronos-2 instead read **patches** of raw values and regress quantiles directly —
+no discrete vocabulary.)*
+
+**2. Architecture — a Transformer (T5 family).**
+The **original** Chronos (v1) is an **encoder-decoder** T5: it predicts a
+probability distribution over the *next token* and decodes **autoregressively**,
+so you can sample many trajectories for P10 / P50 / P90 bands.
+
+⚠️ **Chronos-2 (this demo) is *encoder-only*.** It follows the **T5 encoder**
+(there is *no* decoder), and instead of sampling tokens step by step it outputs
+**multi-step quantile forecasts directly**. (The in-between model, Chronos-Bolt,
+is still encoder-decoder but already does direct multi-step forecasting.)
 
 **3. Zero-shot vs Fine-tuning.**
 - *Zero-shot* works through **in-context learning**: your entire history is fed
@@ -65,24 +73,27 @@ $$\mathrm{WAPE} = \frac{\sum_t |y_t - \hat{y}_t|}{\sum_t |y_t|}$$
 Unlike MAPE, it doesn't blow up on zero/small values (and hourly orders are
 sometimes zero at night). That's why WAPE is a standard in retail and logistics.
 
-**5. What's new in Chronos v2.**
+**5. What's new in Chronos v2 (Chronos-2).**
 The second version made the model more practical for business:
+- an **encoder-only** architecture (drops the decoder) that outputs multi-step
+  quantiles directly — no autoregressive token sampling;
 - support for **covariates** (promos, weather, price) and **multivariate** series;
-- group / in-context attention between related series;
-- fast inference (in the spirit of Chronos-Bolt: patches + direct multi-step
-  forecasting).
+- **group attention** (in-context learning across related series) + **time
+  attention**, with **rotary position embeddings (RoPE)**;
+- fast inference on patches of raw values.
 """
 
 ADVANCED = r"""
 ### 🔴 Level 3 — Advanced: details and math
 
-**Tokenization and the distribution head.**
+**Tokenization and the distribution head (original Chronos v1).**
 Let the series $x_{1:C}$ be the context. Mean-scaling: $\tilde{x}_t = x_t / s$,
 where $s = \frac{1}{C}\sum |x_t|$. Then quantization into $B$ levels (typically
 $B=4096$) yields tokens $z_t \in \{1,\dots,B\}$. The model learns
 $p_\theta(z_{t+1} \mid z_{1:t})$ via cross-entropy — i.e. classification over
 bins, not regression. Forecasts are obtained by autoregressively sampling $k$
-trajectories and taking per-quantile estimates.
+trajectories and taking per-quantile estimates. **This is the v1 recipe** —
+Chronos-Bolt and Chronos-2 drop the tokens and the autoregression (see below).
 
 **Attention (the transformer core).**
 $$\mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)V$$
@@ -93,12 +104,17 @@ stabilizes gradients. For time series this lets the model "reach" directly for
 the relevant past (the same hour yesterday, the same week) without the decay you
 get in an RNN.
 
-**From autoregression to patches (Chronos-Bolt / v2).**
-Token-by-token autoregressive decoding is slow (O(H) passes for a horizon $H$).
-The Bolt approach cuts the series into **patches** (a window of several points →
-one token) and predicts the whole horizon at once (**direct multi-horizon**),
-which gives a multiplicative speedup at inference and often better accuracy on
-long horizons.
+**Architecture evolution — encoder-decoder → encoder-only.**
+- **v1**: T5 **encoder-decoder**, tokenized values, **autoregressive** decoding
+  (O(H) passes for a horizon $H$) — accurate but slow.
+- **Chronos-Bolt**: still a T5 **encoder-decoder**, but it reads **patches**
+  (a window of points → one embedding) and the decoder **directly regresses
+  quantiles** for the whole horizon (*direct multi-step*) — up to ~250× faster.
+- **Chronos-2**: **encoder-only** — it keeps just the **T5 encoder** (no decoder),
+  adds **rotary position embeddings (RoPE)**, a **time-attention** layer (along the
+  temporal axis) and a **group-attention** layer (across related series/covariates
+  for in-context learning), and emits multi-step **quantiles** directly. So the
+  model in this demo is **encoder-only**, not encoder-decoder.
 
 **Multivariate and covariates in v2.**
 Chronos v2 extends the model from univariate to **multivariate /
@@ -187,15 +203,16 @@ FT_WHAT = r"""
 ### 🧩 What *exactly* gets fine-tuned?
 
 **1 — Which part of the model.**
-Chronos is a **T5 encoder-decoder Transformer**. Fine-tuning nudges its weights:
+Chronos-2 is an **encoder-only** Transformer — it keeps just the **T5 encoder**
+(no decoder). Fine-tuning nudges its weights:
 
-- **Attention projections** (Q, K, V, output) — *this is where your dataset's
-  specific patterns land*: how strongly weekends spike, that holidays matter,
-  the exact weekly/daily shape.
+- **Attention projections** (Q, K, V, output) in both the **time-attention** and
+  **group-attention** layers — *this is where your dataset's specific patterns
+  land*: how strongly weekends spike, that holidays matter, the exact weekly shape.
 - **Feed-forward (MLP) blocks** — the per-position transformations.
 - **Layer norms & biases** — cheap to move, recalibrate scale.
-- **Output (de-tokenization) head** — calibrates the predicted value
-  distribution / amplitude.
+- **Output (quantile) head** — calibrates the predicted value distribution /
+  amplitude.
 
 **How much of that you actually train:**
 

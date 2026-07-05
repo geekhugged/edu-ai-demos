@@ -296,9 +296,15 @@ with tab_theory:
     with st.expander("📎 Useful links and terms"):
         st.markdown(
             """
-- **Chronos** (Amazon Science) — "Chronos: Learning the Language of Time Series".
-- **Chronos-Bolt** — a fast, patch-based variant with direct multi-horizon forecasting.
-- **T5** — an encoder-decoder transformer, the backbone of the first Chronos.
+- **Chronos** (v1) — "Chronos: Learning the Language of Time Series"; T5
+  **encoder-decoder**, tokenized, autoregressive.
+- **Chronos-Bolt** — still a T5 **encoder-decoder**, but patch-based with direct
+  multi-horizon quantile forecasting (much faster).
+- **Chronos-2** — **encoder-only** (the T5 *encoder*, no decoder) with time +
+  group attention and RoPE; multivariate & covariate-aware. *This is the model
+  the demo is about.*
+- **T5** — the Transformer family. v1/Bolt use its encoder **and** decoder;
+  Chronos-2 uses the **encoder only**.
 - **WAPE / WQL** — metrics for point-forecast and quantile accuracy.
 - **In-context learning** — the model's ability to "learn" straight from the
   context without updating weights (the basis of zero-shot).
