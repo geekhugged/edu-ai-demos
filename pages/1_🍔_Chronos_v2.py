@@ -22,7 +22,13 @@ if str(ROOT) not in sys.path:
 
 from src import theory
 from src.attention import SENTENCE_TOKENS, run_attention, sentence_attention
-from src.data import daily_profile, generate_food_delivery, one_day
+from src.data import (
+    daily_profile,
+    generate_food_delivery,
+    month_profile,
+    one_day,
+    weekday_profile,
+)
 from src.models import make_forecasts
 from src.multivariate import correlations, generate_multivariate, reconstruct
 from src.viz import CATEGORICAL, COLORS, base_layout
@@ -30,6 +36,8 @@ from src.viz import CATEGORICAL, COLORS, base_layout
 st.set_page_config(page_title="Chronos v2 — food delivery", page_icon="🍔", layout="wide")
 
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 @st.cache_data(show_spinner=False)
@@ -269,44 +277,88 @@ with tab_theory:
 with tab_attn:
     st.subheader("🔍 How the attention mechanism works")
     st.markdown(
-        "**The simple idea:** to predict the orders in a given hour, the model "
-        "**looks back and pays more attention to similar hours** in the past. "
-        "Below is a live simulation."
+        "**The simple idea:** to predict the orders at a given moment, the model "
+        "**looks back and pays more attention to similar moments** in the past — "
+        "a similar hour of the day, day of the week, or month of the year. Below "
+        "is a live simulation."
     )
 
     st.markdown("#### 🎯 Attention on a time series")
+    st.markdown(
+        "Real series have **several cycles at once**. The model can attend along "
+        "each of them. Pick a granularity and see where the attention goes."
+    )
+
+    granularity = st.radio(
+        "Cycle (granularity)",
+        ["🕐 Hour of day", "📅 Day of week", "🗓️ Month of year"],
+        horizontal=True,
+    )
+
+    # configuration per granularity: period, positions, values, labels, defaults
+    if granularity.startswith("🕐"):
+        period = 24
+        positions = np.arange(24)
+        values = daily_profile(positions)
+        labels = [f"{h:02d}:00" for h in positions]
+        default_q = 19
+        x_title = "Hour of day (keys from the past)"
+        unit = "orders/hour"
+        neighbor_note = ("the model treats **23:00** and **00:00** as neighbors")
+    elif granularity.startswith("📅"):
+        period = 7
+        positions = np.arange(7)
+        values = weekday_profile(df)
+        labels = WEEKDAYS
+        default_q = 5  # Saturday
+        x_title = "Day of week (keys from the past)"
+        unit = "orders/day"
+        neighbor_note = ("the model treats **Sunday** and **Monday** as neighbors")
+    else:
+        period = 12
+        positions = np.arange(12)
+        values = month_profile(df)
+        labels = MONTHS
+        default_q = 11  # December
+        x_title = "Month of year (keys from the past)"
+        unit = "orders/day"
+        neighbor_note = ("the model treats **December** and **January** as neighbors")
+
     colA, colB = st.columns([1, 2])
     with colA:
-        query_hour = st.slider("Which hour are we forecasting? (query)", 0, 23, 19)
+        # options are the label strings themselves (not indices): switching
+        # granularity swaps the whole option set, so the widget can't carry a
+        # stale out-of-range value. Distinct key per granularity to be safe.
+        q_label = st.select_slider(
+            "Which slot are we forecasting? (query)",
+            options=labels, value=labels[default_q],
+            key=f"attn_query_p{period}",
+        )
+        q_idx = labels.index(q_label)
         temp = st.slider("Attention sharpness (temperature)", 0.2, 3.0, 1.0, 0.1,
-                         help="Lower — sharper attention (focus on one hour). "
+                         help="Lower — sharper attention (focus on one slot). "
                               "Higher — more diffuse (look at everything a little).")
         st.caption(
-            "The query is the hour we want to predict. The keys are hours from "
-            "the past. The model computes similarity and hands out **attention "
-            "weights**."
+            "The query is the slot we want to predict. The keys are past slots of "
+            "the same cycle. The model computes similarity and hands out "
+            "**attention weights**."
         )
 
-    # keys: 24 hours of a "yesterday" typical day
-    prof = daily_profile(np.arange(24))
-    key_hours = np.arange(24)
-    attn = run_attention(key_hours, prof, query_hour=query_hour, temperature=temp)
+    attn = run_attention(positions, values, query_position=q_idx,
+                         period=period, temperature=temp)
 
     with colB:
         fig_a = go.Figure()
         fig_a.add_trace(
             go.Bar(
-                x=key_hours, y=attn.weights,
-                marker=dict(
-                    color=attn.weights, colorscale="Blues",
-                    line=dict(width=0),
-                ),
+                x=labels, y=attn.weights,
+                marker=dict(color=attn.weights, colorscale="Blues", line=dict(width=0)),
                 name="Attention weight",
             )
         )
-        fig_a.add_vline(x=query_hour, line=dict(color=COLORS["dinner"], width=2, dash="dash"),
+        fig_a.add_vline(x=q_idx, line=dict(color=COLORS["dinner"], width=2, dash="dash"),
                         annotation_text="query", annotation_position="top")
-        fig_a.update_xaxes(title="Hour of day (keys from the past)", dtick=2)
+        fig_a.update_xaxes(title=x_title)
         fig_a.update_yaxes(title="Attention weight (sums to 1)")
         base_layout(fig_a, height=340, title="Where the model 'looks'")
         st.plotly_chart(fig_a, width="stretch")
@@ -314,13 +366,13 @@ with tab_attn:
     top_idx = int(np.argmax(attn.weights))
     st.success(
         f"🔦 Most of the attention (**{attn.weights[top_idx]*100:.0f}%**) goes to "
-        f"**{top_idx}:00** — the hour closest in meaning to the query "
-        f"**{query_hour}:00**. Forecast = weighted sum ≈ **{attn.prediction:.1f}** "
-        f"orders."
+        f"**{labels[top_idx]}** — the slot closest in meaning to the query "
+        f"**{labels[q_idx]}**. Forecast = weighted sum ≈ **{attn.prediction:.0f}** "
+        f"{unit}."
     )
     st.caption(
-        "Notice: the model treats 23:00 and 00:00 as neighbors — because the "
-        "hour is encoded on a circle (sin/cos), not as a plain number."
+        f"Notice: {neighbor_note} — because the position is encoded on a circle "
+        "(sin/cos), not as a plain number. So the ends of the cycle stay close."
     )
 
     st.divider()
