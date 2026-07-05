@@ -30,44 +30,55 @@ def softmax(x: np.ndarray, temperature: float = 1.0) -> np.ndarray:
     return e / e.sum()
 
 
-def hour_embedding(hour: float) -> np.ndarray:
-    """A cyclic representation of the hour of day as two numbers (sin, cos).
+def cyclic_embedding(value: float, period: float) -> np.ndarray:
+    """A cyclic representation of a position within a period as (sin, cos).
 
-    Thanks to this, 23:00 and 00:00 end up "close" rather than at opposite ends.
+    Thanks to this, the two ends of the cycle end up "close" rather than at
+    opposite ends: 23:00 ↔ 00:00 (period 24), Sunday ↔ Monday (period 7),
+    December ↔ January (period 12).
     """
-    ang = 2 * np.pi * hour / 24.0
+    ang = 2 * np.pi * value / period
     return np.array([np.sin(ang), np.cos(ang)])
+
+
+def hour_embedding(hour: float) -> np.ndarray:
+    """Cyclic embedding of the hour of day (period 24). Kept for convenience."""
+    return cyclic_embedding(hour, 24.0)
 
 
 @dataclass
 class AttentionResult:
-    key_hours: np.ndarray      # hours of the key tokens (what was in the past)
-    key_values: np.ndarray     # values (orders) at those hours
+    key_positions: np.ndarray  # positions of the key tokens (past slots in the cycle)
+    key_values: np.ndarray     # values (orders) at those positions
     scores: np.ndarray         # "raw" query·key similarity
     weights: np.ndarray        # attention weights after softmax (sum = 1)
     prediction: float          # final forecast = weighted sum of values
-    query_hour: float
+    query_position: float
+    period: float
 
 
 def run_attention(
-    key_hours: np.ndarray,
+    key_positions: np.ndarray,
     key_values: np.ndarray,
-    query_hour: float,
+    query_position: float,
+    period: float = 24.0,
     temperature: float = 1.0,
 ) -> AttentionResult:
-    """Compute attention for a single query.
+    """Compute cyclic attention for a single query.
 
-    * Query — the vector of the target hour (which moment we're forecasting).
-    * Keys — the vectors of hours from the past.
-    * Score = Q · K (dot product: the closer the hour, the larger it is).
+    Works for any period: hour of day (24), day of week (7), month of year (12).
+
+    * Query — the vector of the target position (which slot we're forecasting).
+    * Keys — the vectors of positions from the past.
+    * Score = Q · K (dot product: the closer within the cycle, the larger it is).
     * Weights = softmax(Score).
     * Prediction = sum of weights * values.
     """
-    key_hours = np.asarray(key_hours, dtype=float)
+    key_positions = np.asarray(key_positions, dtype=float)
     key_values = np.asarray(key_values, dtype=float)
 
-    q = hour_embedding(query_hour)
-    keys = np.stack([hour_embedding(h) for h in key_hours])
+    q = cyclic_embedding(query_position, period)
+    keys = np.stack([cyclic_embedding(p, period) for p in key_positions])
 
     scores = keys @ q  # (N,) dot products
     # scale, as in the transformer (divide by sqrt(d)), d=2
@@ -76,12 +87,13 @@ def run_attention(
     prediction = float((weights * key_values).sum())
 
     return AttentionResult(
-        key_hours=key_hours,
+        key_positions=key_positions,
         key_values=key_values,
         scores=scores,
         weights=weights,
         prediction=prediction,
-        query_hour=query_hour,
+        query_position=query_position,
+        period=period,
     )
 
 

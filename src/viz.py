@@ -26,7 +26,8 @@ def base_layout(fig: go.Figure, height: int = 420, title: str | None = None) -> 
     """Bring a chart to the common minimalist style."""
     fig.update_layout(
         height=height,
-        title=title,
+        # always an explicit dict — a null title can render as "undefined"
+        title=dict(text=title or ""),
         template="plotly_white",
         margin=dict(l=10, r=10, t=50 if title else 20, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),

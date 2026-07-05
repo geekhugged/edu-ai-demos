@@ -17,13 +17,16 @@ def generate_multivariate(
     beta_promo: float = 0.35,
     beta_rain: float = 0.25,
     beta_temp: float = -0.15,
+    beta_holiday: float = 0.55,
 ) -> pd.DataFrame:
-    """Generate a target order series + three covariates.
+    """Generate a target order series + four covariates.
 
     Covariates:
       * temperature — temperature (°C), seasonal-diurnal;
       * rain — rain intensity (0..1), random showers;
-      * promo — promotion flag (0/1), a few campaigns.
+      * promo — promotion flag (0/1), a few campaigns;
+      * holiday — special-day flag (0/1), a couple of public holidays that cause
+        a strong demand spike (people stay in and order food).
 
     The target series is built as a base daily profile amplified/dampened by the
     covariates through the beta_* coefficients. In the UI the user can change the
@@ -58,6 +61,12 @@ def generate_multivariate(
         day = rng.integers(0, days)
         promo[day * 24 : (day + 1) * 24] = 1.0
 
+    # special days / public holidays — a couple of standout days with a big spike
+    holiday = np.zeros(len(index))
+    holiday_days = rng.choice(np.arange(days), size=2, replace=False)
+    for day in holiday_days:
+        holiday[day * 24 : (day + 1) * 24] = 1.0
+
     weekend = (dow >= 5).astype(float)
 
     # --- target series ---
@@ -70,6 +79,7 @@ def generate_multivariate(
         + beta_promo * promo
         + beta_rain * rain
         + beta_temp * temp_z
+        + beta_holiday * holiday
     )
     noise = rng.normal(1.0, 0.06, len(index))
     orders = np.clip(np.round(signal * noise), 0, None)
@@ -80,6 +90,7 @@ def generate_multivariate(
             "temperature": temperature.round(1),
             "rain": rain.round(2),
             "promo": promo,
+            "holiday": holiday,
             "weekend": weekend,
         },
         index=index,
@@ -91,9 +102,11 @@ def reconstruct(
     use_promo: bool,
     use_rain: bool,
     use_temp: bool,
+    use_holiday: bool,
     beta_promo: float,
     beta_rain: float,
     beta_temp: float,
+    beta_holiday: float,
 ) -> tuple[np.ndarray, float]:
     """A minimal "model" that tries to reconstruct orders from the covariates.
 
@@ -118,6 +131,8 @@ def reconstruct(
         factor = factor + beta_rain * df["rain"].to_numpy()
     if use_temp:
         factor = factor + beta_temp * temp_z
+    if use_holiday:
+        factor = factor + beta_holiday * df["holiday"].to_numpy()
 
     recon = base * factor
     return recon, wape(df["orders"].to_numpy(), recon)
@@ -125,5 +140,5 @@ def reconstruct(
 
 def correlations(df: pd.DataFrame) -> pd.DataFrame:
     """Correlations of the target series with the covariates (for the heatmap)."""
-    cols = ["orders", "temperature", "rain", "promo", "weekend"]
+    cols = ["orders", "temperature", "rain", "promo", "holiday", "weekend"]
     return df[cols].corr()

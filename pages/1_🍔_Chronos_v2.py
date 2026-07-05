@@ -22,7 +22,13 @@ if str(ROOT) not in sys.path:
 
 from src import theory
 from src.attention import SENTENCE_TOKENS, run_attention, sentence_attention
-from src.data import daily_profile, generate_food_delivery, one_day
+from src.data import (
+    daily_profile,
+    generate_food_delivery,
+    month_profile,
+    one_day,
+    weekday_profile,
+)
 from src.models import make_forecasts
 from src.multivariate import correlations, generate_multivariate, reconstruct
 from src.viz import CATEGORICAL, COLORS, base_layout
@@ -30,6 +36,8 @@ from src.viz import CATEGORICAL, COLORS, base_layout
 st.set_page_config(page_title="Chronos v2 — food delivery", page_icon="🍔", layout="wide")
 
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 @st.cache_data(show_spinner=False)
@@ -38,8 +46,10 @@ def _data(seed: int, noise: float) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def _mv(seed: int, bp: float, br: float, bt: float) -> pd.DataFrame:
-    return generate_multivariate(seed=seed, beta_promo=bp, beta_rain=br, beta_temp=bt)
+def _mv(seed: int, bp: float, br: float, bt: float, bh: float) -> pd.DataFrame:
+    return generate_multivariate(
+        seed=seed, beta_promo=bp, beta_rain=br, beta_temp=bt, beta_holiday=bh
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -74,7 +84,7 @@ with tab_data:
     st.subheader("📈 Synthetic food-delivery demand over a year")
     st.markdown(
         "The data is hourly. Within **each day** there are two hills: a lunch "
-        "peak around **13:00** (smaller) and a dinner peak around **19:30** "
+        "peak around **11:30** (smaller) and a dinner peak around **18:30** "
         "(larger). Plus weekly seasonality (weekends are busier) and yearly "
         "business growth."
     )
@@ -103,9 +113,9 @@ with tab_data:
             fill="tozeroy", fillcolor="rgba(76,125,240,0.12)",
         )
     )
-    fig.add_vrect(x0=12, x1=14, fillcolor=COLORS["lunch"], opacity=0.10, line_width=0,
+    fig.add_vrect(x0=10.5, x1=13, fillcolor=COLORS["lunch"], opacity=0.10, line_width=0,
                   annotation_text="🍝 Lunch", annotation_position="top left")
-    fig.add_vrect(x0=18.5, x1=21, fillcolor=COLORS["dinner"], opacity=0.10, line_width=0,
+    fig.add_vrect(x0=17.5, x1=20, fillcolor=COLORS["dinner"], opacity=0.10, line_width=0,
                   annotation_text="🍕 Dinner", annotation_position="top right")
     fig.update_xaxes(title="Hour of day", dtick=2)
     fig.update_yaxes(title="Orders per hour")
@@ -269,44 +279,88 @@ with tab_theory:
 with tab_attn:
     st.subheader("🔍 How the attention mechanism works")
     st.markdown(
-        "**The simple idea:** to predict the orders in a given hour, the model "
-        "**looks back and pays more attention to similar hours** in the past. "
-        "Below is a live simulation."
+        "**The simple idea:** to predict the orders at a given moment, the model "
+        "**looks back and pays more attention to similar moments** in the past — "
+        "a similar hour of the day, day of the week, or month of the year. Below "
+        "is a live simulation."
     )
 
     st.markdown("#### 🎯 Attention on a time series")
+    st.markdown(
+        "Real series have **several cycles at once**. The model can attend along "
+        "each of them. Pick a granularity and see where the attention goes."
+    )
+
+    granularity = st.radio(
+        "Cycle (granularity)",
+        ["🕐 Hour of day", "📅 Day of week", "🗓️ Month of year"],
+        horizontal=True,
+    )
+
+    # configuration per granularity: period, positions, values, labels, defaults
+    if granularity.startswith("🕐"):
+        period = 24
+        positions = np.arange(24)
+        values = daily_profile(positions)
+        labels = [f"{h:02d}:00" for h in positions]
+        default_q = 19
+        x_title = "Hour of day (keys from the past)"
+        unit = "orders/hour"
+        neighbor_note = ("the model treats **23:00** and **00:00** as neighbors")
+    elif granularity.startswith("📅"):
+        period = 7
+        positions = np.arange(7)
+        values = weekday_profile(df)
+        labels = WEEKDAYS
+        default_q = 5  # Saturday
+        x_title = "Day of week (keys from the past)"
+        unit = "orders/day"
+        neighbor_note = ("the model treats **Sunday** and **Monday** as neighbors")
+    else:
+        period = 12
+        positions = np.arange(12)
+        values = month_profile(df)
+        labels = MONTHS
+        default_q = 11  # December
+        x_title = "Month of year (keys from the past)"
+        unit = "orders/day"
+        neighbor_note = ("the model treats **December** and **January** as neighbors")
+
     colA, colB = st.columns([1, 2])
     with colA:
-        query_hour = st.slider("Which hour are we forecasting? (query)", 0, 23, 19)
+        # options are the label strings themselves (not indices): switching
+        # granularity swaps the whole option set, so the widget can't carry a
+        # stale out-of-range value. Distinct key per granularity to be safe.
+        q_label = st.select_slider(
+            "Which slot are we forecasting? (query)",
+            options=labels, value=labels[default_q],
+            key=f"attn_query_p{period}",
+        )
+        q_idx = labels.index(q_label)
         temp = st.slider("Attention sharpness (temperature)", 0.2, 3.0, 1.0, 0.1,
-                         help="Lower — sharper attention (focus on one hour). "
+                         help="Lower — sharper attention (focus on one slot). "
                               "Higher — more diffuse (look at everything a little).")
         st.caption(
-            "The query is the hour we want to predict. The keys are hours from "
-            "the past. The model computes similarity and hands out **attention "
-            "weights**."
+            "The query is the slot we want to predict. The keys are past slots of "
+            "the same cycle. The model computes similarity and hands out "
+            "**attention weights**."
         )
 
-    # keys: 24 hours of a "yesterday" typical day
-    prof = daily_profile(np.arange(24))
-    key_hours = np.arange(24)
-    attn = run_attention(key_hours, prof, query_hour=query_hour, temperature=temp)
+    attn = run_attention(positions, values, query_position=q_idx,
+                         period=period, temperature=temp)
 
     with colB:
         fig_a = go.Figure()
         fig_a.add_trace(
             go.Bar(
-                x=key_hours, y=attn.weights,
-                marker=dict(
-                    color=attn.weights, colorscale="Blues",
-                    line=dict(width=0),
-                ),
+                x=labels, y=attn.weights,
+                marker=dict(color=attn.weights, colorscale="Blues", line=dict(width=0)),
                 name="Attention weight",
             )
         )
-        fig_a.add_vline(x=query_hour, line=dict(color=COLORS["dinner"], width=2, dash="dash"),
+        fig_a.add_vline(x=q_idx, line=dict(color=COLORS["dinner"], width=2, dash="dash"),
                         annotation_text="query", annotation_position="top")
-        fig_a.update_xaxes(title="Hour of day (keys from the past)", dtick=2)
+        fig_a.update_xaxes(title=x_title)
         fig_a.update_yaxes(title="Attention weight (sums to 1)")
         base_layout(fig_a, height=340, title="Where the model 'looks'")
         st.plotly_chart(fig_a, width="stretch")
@@ -314,13 +368,13 @@ with tab_attn:
     top_idx = int(np.argmax(attn.weights))
     st.success(
         f"🔦 Most of the attention (**{attn.weights[top_idx]*100:.0f}%**) goes to "
-        f"**{top_idx}:00** — the hour closest in meaning to the query "
-        f"**{query_hour}:00**. Forecast = weighted sum ≈ **{attn.prediction:.1f}** "
-        f"orders."
+        f"**{labels[top_idx]}** — the slot closest in meaning to the query "
+        f"**{labels[q_idx]}**. Forecast = weighted sum ≈ **{attn.prediction:.0f}** "
+        f"{unit}."
     )
     st.caption(
-        "Notice: the model treats 23:00 and 00:00 as neighbors — because the "
-        "hour is encoded on a circle (sin/cos), not as a plain number."
+        f"Notice: {neighbor_note} — because the position is encoded on a circle "
+        "(sin/cos), not as a plain number. So the ends of the cycle stay close."
     )
 
     st.divider()
@@ -352,18 +406,20 @@ with tab_mv:
     st.subheader("🧩 Multivariate series and covariates")
     st.markdown(
         "Chronos v2 can account not only for the order series itself but also "
-        "for **external features** (covariates): weather, rain, promotions. "
-        "Below is a simulation: switch covariates on and watch the "
-        "reconstruction of the series improve."
+        "for **external features** (covariates): weather, rain, promotions, and "
+        "**special days / public holidays**. Below is a simulation: switch "
+        "covariates on and watch the reconstruction of the series improve."
     )
 
     st.markdown("#### 🎛️ Strength of covariate influence")
-    cc1, cc2, cc3 = st.columns(3)
+    cc1, cc2, cc3, cc4 = st.columns(4)
     bp = cc1.slider("Promotion ↑", 0.0, 0.8, 0.35, 0.05)
     br = cc2.slider("Rain ↑", 0.0, 0.6, 0.25, 0.05)
     bt = cc3.slider("Temperature (↑ temp → ↓ orders)", -0.4, 0.0, -0.15, 0.05)
+    bh = cc4.slider("Holiday ↑", 0.0, 1.0, 0.55, 0.05,
+                    help="Public holidays cause a strong demand spike.")
 
-    mv = _mv(seed, bp, br, bt)
+    mv = _mv(seed, bp, br, bt, bh)
 
     # multi-panel chart: target series + covariates
     st.markdown("#### 📊 The target series and its covariates")
@@ -372,44 +428,49 @@ with tab_mv:
         ("temperature", "Temperature, °C", CATEGORICAL[1]),
         ("rain", "Rain (0..1)", CATEGORICAL[2]),
         ("promo", "Promo (0/1)", CATEGORICAL[3]),
+        ("holiday", "Holiday (0/1)", CATEGORICAL[4]),
     ]
     from plotly.subplots import make_subplots
 
     fig_mv = make_subplots(
-        rows=len(series_cfg), cols=1, shared_xaxes=True, vertical_spacing=0.04,
+        rows=len(series_cfg), cols=1, shared_xaxes=True, vertical_spacing=0.035,
         subplot_titles=[c[1] for c in series_cfg],
     )
     for i, (col, _label, color) in enumerate(series_cfg, start=1):
-        fill = "tozeroy" if col in ("rain", "promo") else None
+        fill = "tozeroy" if col in ("rain", "promo", "holiday") else None
         fig_mv.add_trace(
             go.Scatter(x=mv.index, y=mv[col], mode="lines",
                        line=dict(color=color, width=1.6), fill=fill,
                        name=_label, showlegend=False),
             row=i, col=1,
         )
-    fig_mv.update_layout(height=520, template="plotly_white",
+    fig_mv.update_layout(height=600, template="plotly_white",
                          margin=dict(l=10, r=10, t=30, b=10),
                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     fig_mv.update_xaxes(showgrid=True, gridcolor=COLORS["grid"])
     fig_mv.update_yaxes(showgrid=True, gridcolor=COLORS["grid"])
     st.plotly_chart(fig_mv, width="stretch")
     st.caption(
-        "Look closely: order spikes line up with promo days and rainy hours. "
-        "The model can use these signals for the forecast."
+        "Look closely: order spikes line up with promo days, rainy hours, and "
+        "especially the **holidays** (the tallest spikes). The model can use "
+        "these signals for the forecast."
     )
 
     st.markdown("#### 🧪 What accounting for covariates gives you")
     st.markdown(
         "Let's turn on a 'model' that tries to reconstruct the orders. Add "
-        "covariates one by one and watch the **WAPE**."
+        "covariates one by one and watch the **WAPE**. The **holiday** flag "
+        "usually helps the most — those spikes are otherwise impossible to guess."
     )
-    u1, u2, u3 = st.columns(3)
+    u1, u2, u3, u4 = st.columns(4)
     use_promo = u1.checkbox("Use promo", value=True)
     use_rain = u2.checkbox("Use rain", value=True)
     use_temp = u3.checkbox("Use temperature", value=False)
+    use_holiday = u4.checkbox("Use holiday", value=True)
 
-    recon, w_full = reconstruct(mv, use_promo, use_rain, use_temp, bp, br, bt)
-    _, w_none = reconstruct(mv, False, False, False, bp, br, bt)
+    recon, w_full = reconstruct(mv, use_promo, use_rain, use_temp, use_holiday,
+                                bp, br, bt, bh)
+    _, w_none = reconstruct(mv, False, False, False, False, bp, br, bt, bh)
 
     k1, k2 = st.columns(2)
     k1.metric("WAPE without covariates", f"{w_none:.1f}%")
@@ -431,7 +492,7 @@ with tab_mv:
 
     st.markdown("#### 🔥 Correlations between the series")
     corr = correlations(mv)
-    labels = ["Orders", "Temp.", "Rain", "Promo", "Weekend"]
+    labels = ["Orders", "Temp.", "Rain", "Promo", "Holiday", "Weekend"]
     fig_c = go.Figure(
         go.Heatmap(
             z=corr.values, x=labels, y=labels, colorscale="RdBu", zmid=0,
@@ -442,8 +503,8 @@ with tab_mv:
     base_layout(fig_c, height=380)
     st.plotly_chart(fig_c, width="stretch")
     st.info(
-        "💡 Orders correlate positively with **promo** and **rain**, and "
-        "negatively with **temperature** (people order less in the heat). These "
-        "are exactly the links a multivariate model captures through attention "
-        "*between* series."
+        "💡 Orders correlate positively with **holiday**, **promo**, and "
+        "**rain**, and negatively with **temperature** (people order less in the "
+        "heat). These are exactly the links a multivariate model captures "
+        "through attention *between* series."
     )
