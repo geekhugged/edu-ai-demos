@@ -14,6 +14,11 @@ readers — and backs it all with **interactive simulations** you can play with.
 """
 )
 
+st.caption(
+    "🌗 The app opens in **dark mode**. Prefer light? Switch any time via the "
+    "**⋮ menu → Settings → Theme** (Light / Dark / Use system setting)."
+)
+
 st.divider()
 
 st.markdown("### 📚 Available demos")

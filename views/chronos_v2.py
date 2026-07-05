@@ -31,7 +31,7 @@ from src.data import (
 )
 from src.models import make_forecasts
 from src.multivariate import correlations, generate_multivariate, reconstruct
-from src.viz import CATEGORICAL, COLORS, base_layout
+from src.viz import CATEGORICAL, COLORS, base_layout, theme_type
 
 # NOTE: st.set_page_config is intentionally NOT called here — the entrypoint
 # (app.py) owns it under st.navigation, and calling it twice would raise.
@@ -473,9 +473,14 @@ with tab_mv:
                        name=_label, showlegend=False),
             row=i, col=1,
         )
-    fig_mv.update_layout(height=600, template="plotly_white",
-                         margin=dict(l=10, r=10, t=30, b=10),
-                         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    _dark = theme_type() == "dark"
+    fig_mv.update_layout(
+        height=600,
+        template="plotly_dark" if _dark else "plotly_white",
+        margin=dict(l=10, r=10, t=30, b=10),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#E6EAF1" if _dark else "#1B2430"),
+    )
     fig_mv.update_xaxes(showgrid=True, gridcolor=COLORS["grid"])
     fig_mv.update_yaxes(showgrid=True, gridcolor=COLORS["grid"])
     st.plotly_chart(fig_mv, width="stretch")
