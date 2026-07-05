@@ -24,10 +24,10 @@ from src import theory
 from src.attention import SENTENCE_TOKENS, run_attention, sentence_attention
 from src.data import (
     daily_profile,
+    daily_totals,
     generate_food_delivery,
-    month_profile,
+    monthly_means,
     one_day,
-    weekday_profile,
 )
 from src.models import make_forecasts
 from src.multivariate import correlations, generate_multivariate, reconstruct
@@ -83,15 +83,16 @@ tab_data, tab_models, tab_theory, tab_attn, tab_mv = st.tabs(
 with tab_data:
     st.subheader("📈 Synthetic food-delivery demand over a year")
     st.markdown(
-        "The data is hourly. Within **each day** there are two hills: a lunch "
-        "peak around **11:30** (smaller) and a dinner peak around **18:30** "
-        "(larger). Plus weekly seasonality (weekends are busier) and yearly "
-        "business growth."
+        "The data is hourly and spans **two years**. Within **each day** there "
+        "are two hills: a lunch peak around **11:30** (smaller) and a dinner peak "
+        "around **18:30** (larger). Plus weekly seasonality (weekends are busier), "
+        "yearly seasonality, and business growth over the two years."
     )
 
+    n_years = round((df.index[-1] - df.index[0]).days / 365)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total hours", f"{len(df):,}")
-    c2.metric("Orders per year", f"{int(df['orders'].sum()):,}")
+    c2.metric(f"Total orders ({n_years} yrs)", f"{int(df['orders'].sum()):,}")
     c3.metric("Avg per hour", f"{df['orders'].mean():.1f}")
     c4.metric("Peak hour", f"{int(df['orders'].max())}")
 
@@ -122,7 +123,7 @@ with tab_data:
     base_layout(fig, height=380, title=f"Day profile — {WEEKDAYS[dow_pick]}")
     st.plotly_chart(fig, width="stretch")
 
-    with st.expander("📅 Show the whole year (hourly series)"):
+    with st.expander("📅 Show all history (both years, hourly)"):
         fig_year = go.Figure()
         fig_year.add_trace(
             go.Scatter(x=df.index, y=df["orders"], mode="lines",
@@ -139,8 +140,9 @@ with tab_data:
         base_layout(fig_year, height=340)
         st.plotly_chart(fig_year, width="stretch")
         st.caption(
-            "You can see growth toward year-end (the business is growing) and a "
-            "mild seasonality (winter is busier than summer)."
+            "You can see steady growth across the two years (the business is "
+            "growing) and a repeating yearly seasonality (winter is busier than "
+            "summer)."
         )
 
     st.markdown("#### 🗓️ Heatmap: hour × day of week")
@@ -297,69 +299,95 @@ with tab_attn:
         horizontal=True,
     )
 
-    # configuration per granularity: period, positions, values, labels, defaults
+    # Two rendering modes:
+    #   * "cycle"    — keys are one full cycle (24 hours of a typical day);
+    #   * "sequence" — keys are a real run of history (many days / months), each
+    #                  sitting at its own position in the cycle. Attention then
+    #                  lights up every past slot that shares the query's phase
+    #                  (e.g. every past Saturday, every past December).
+    cycle_hist_days = 14   # day-level: show at least 2 weeks
+    month_hist = 18        # month-level: show 1.5 years
+
     if granularity.startswith("🕐"):
+        mode = "cycle"
         period = 24
-        positions = np.arange(24)
-        values = daily_profile(positions)
-        labels = [f"{h:02d}:00" for h in positions]
-        default_q = 19
+        key_positions = np.arange(24)
+        key_values = daily_profile(key_positions)
+        key_labels = [f"{h:02d}:00" for h in key_positions]
+        cycle_labels = key_labels
+        default_cycle = 19
         x_title = "Hour of day (keys from the past)"
         unit = "orders/hour"
-        neighbor_note = ("the model treats **23:00** and **00:00** as neighbors")
+        query_prompt = "Which hour are we forecasting? (query)"
+        neighbor_note = "the model treats **23:00** and **00:00** as neighbors"
     elif granularity.startswith("📅"):
+        mode = "sequence"
         period = 7
-        positions = np.arange(7)
-        values = weekday_profile(df)
-        labels = WEEKDAYS
-        default_q = 5  # Saturday
-        x_title = "Day of week (keys from the past)"
+        seq = daily_totals(df).iloc[-cycle_hist_days:]
+        key_positions = seq.index.dayofweek.to_numpy()
+        key_values = seq.to_numpy()
+        key_labels = [d.strftime("%a %d %b") for d in seq.index]
+        cycle_labels = WEEKDAYS
+        default_cycle = 5  # Saturday
+        x_title = f"Day (last {cycle_hist_days} days ≈ {cycle_hist_days // 7} weeks)"
         unit = "orders/day"
-        neighbor_note = ("the model treats **Sunday** and **Monday** as neighbors")
+        query_prompt = "Which weekday are we forecasting? (query)"
+        neighbor_note = "the model treats **Sunday** and **Monday** as neighbors"
     else:
+        mode = "sequence"
         period = 12
-        positions = np.arange(12)
-        values = month_profile(df)
-        labels = MONTHS
-        default_q = 11  # December
-        x_title = "Month of year (keys from the past)"
+        seq = monthly_means(df).iloc[-month_hist:]
+        key_positions = seq.index.month.to_numpy() - 1
+        key_values = seq.to_numpy()
+        key_labels = [d.strftime("%b %Y") for d in seq.index]
+        cycle_labels = MONTHS
+        default_cycle = 11  # December
+        x_title = f"Month (last {month_hist} months ≈ {month_hist / 12:.1f} years)"
         unit = "orders/day"
-        neighbor_note = ("the model treats **December** and **January** as neighbors")
+        query_prompt = "Which month are we forecasting? (query)"
+        neighbor_note = "the model treats **December** and **January** as neighbors"
 
     colA, colB = st.columns([1, 2])
     with colA:
-        # options are the label strings themselves (not indices): switching
-        # granularity swaps the whole option set, so the widget can't carry a
-        # stale out-of-range value. Distinct key per granularity to be safe.
+        # The query is always a position in the CYCLE (hour / weekday / month),
+        # chosen from the cycle labels. Options are label strings with a distinct
+        # key per granularity so a stale value can't leak across option sets.
         q_label = st.select_slider(
-            "Which slot are we forecasting? (query)",
-            options=labels, value=labels[default_q],
+            query_prompt, options=cycle_labels, value=cycle_labels[default_cycle],
             key=f"attn_query_p{period}",
         )
-        q_idx = labels.index(q_label)
+        q_pos = cycle_labels.index(q_label)
         temp = st.slider("Attention sharpness (temperature)", 0.2, 3.0, 1.0, 0.1,
                          help="Lower — sharper attention (focus on one slot). "
                               "Higher — more diffuse (look at everything a little).")
-        st.caption(
-            "The query is the slot we want to predict. The keys are past slots of "
-            "the same cycle. The model computes similarity and hands out "
-            "**attention weights**."
-        )
+        if mode == "cycle":
+            st.caption(
+                "The query is the slot we want to predict. The keys are past slots "
+                "of the same cycle. The model computes similarity and hands out "
+                "**attention weights**."
+            )
+        else:
+            st.caption(
+                "The keys are the **actual past days/months**. Every past slot that "
+                "shares the query's phase (same weekday / same month) lights up — "
+                "that's where the attention flows."
+            )
 
-    attn = run_attention(positions, values, query_position=q_idx,
+    attn = run_attention(key_positions, key_values, query_position=q_pos,
                          period=period, temperature=temp)
 
     with colB:
         fig_a = go.Figure()
         fig_a.add_trace(
             go.Bar(
-                x=labels, y=attn.weights,
+                x=key_labels, y=attn.weights,
                 marker=dict(color=attn.weights, colorscale="Blues", line=dict(width=0)),
                 name="Attention weight",
             )
         )
-        fig_a.add_vline(x=q_idx, line=dict(color=COLORS["dinner"], width=2, dash="dash"),
-                        annotation_text="query", annotation_position="top")
+        if mode == "cycle":
+            fig_a.add_vline(x=q_pos, line=dict(color=COLORS["dinner"], width=2, dash="dash"),
+                            annotation_text="query", annotation_position="top")
         fig_a.update_xaxes(title=x_title)
         fig_a.update_yaxes(title="Attention weight (sums to 1)")
         base_layout(fig_a, height=340, title="Where the model 'looks'")
@@ -368,8 +396,8 @@ with tab_attn:
     top_idx = int(np.argmax(attn.weights))
     st.success(
         f"🔦 Most of the attention (**{attn.weights[top_idx]*100:.0f}%**) goes to "
-        f"**{labels[top_idx]}** — the slot closest in meaning to the query "
-        f"**{labels[q_idx]}**. Forecast = weighted sum ≈ **{attn.prediction:.0f}** "
+        f"**{key_labels[top_idx]}** — closest in meaning to the query "
+        f"**{q_label}**. Forecast = weighted sum ≈ **{attn.prediction:.0f}** "
         f"{unit}."
     )
     st.caption(

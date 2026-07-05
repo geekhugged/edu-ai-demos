@@ -24,10 +24,10 @@ example — forecasting hourly food-delivery orders. Five sections:
 
 | Tab | What it shows |
 |---|---|
-| 📈 **Data** | A synthetic year-long series with two daily peaks — lunch (~11:30) and dinner (~18:30), weekly seasonality, a growth trend. Day profile, "hour × day-of-week" heatmap. |
+| 📈 **Data** | A synthetic **two-year** hourly series with two daily peaks — lunch (~11:30) and dinner (~18:30), weekly + yearly seasonality, a growth trend. Day profile, "hour × day-of-week" heatmap. |
 | ⚔️ **Zero-shot vs Fine-tuned** | Comparison of the two modes of one model by the **WAPE** metric. You can see exactly where each mode errs and what fine-tuning buys you. |
 | 🎚️ **Theory (3 levels)** | 🟢 Beginner · 🟡 Intermediate · 🔴 Advanced — from analogies to tokenization, T5, attention, and fine-tuning practice. |
-| 🔍 **Attention mechanism** | An interactive attention simulation across three cycles — hour of day, day of week, month of year — showing how the model "looks back" at similar moments (and treats the ends of each cycle as neighbors). Plus a word-level example. |
+| 🔍 **Attention mechanism** | An interactive attention simulation across three cycles — hour of day (one day), day of week (over 2 weeks of real days), month of year (over 1.5 years of real months) — showing how the model "looks back" at similar moments (every past Saturday, every past December) and treats the ends of each cycle as neighbors. Plus a word-level example. |
 | 🧩 **Multivariate series** | A covariate simulation (promo, rain, temperature, holidays / special days): how external features explain demand and reduce the error. |
 
 ## 🗂️ Project structure

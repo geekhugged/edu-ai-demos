@@ -1,6 +1,6 @@
 """Synthetic food-delivery order data generation.
 
-Hourly data across a year. Within each day there are two "hills":
+Hourly data spanning two years by default. Within each day there are two "hills":
   * a lunch peak around 13:00 (smaller);
   * a dinner peak around 19:30 (larger).
 
@@ -48,15 +48,17 @@ def _seasonal_factor(day_of_year: np.ndarray) -> np.ndarray:
 
 
 def generate_food_delivery(
-    year: int = 2025,
+    start_year: int = 2024,
+    years: int = 2,
     seed: int = 42,
     noise_level: float = 0.10,
 ) -> pd.DataFrame:
-    """Generate an hourly food-delivery order series for one year.
+    """Generate an hourly food-delivery order series spanning several years.
 
     Parameters
     ----------
-    year : year for the date index.
+    start_year : first calendar year of the series.
+    years : how many full years to generate (default 2).
     seed : random number generator seed.
     noise_level : relative level of multiplicative noise (0..1).
 
@@ -67,7 +69,8 @@ def generate_food_delivery(
     """
     rng = np.random.default_rng(seed)
 
-    index = pd.date_range(f"{year}-01-01", f"{year}-12-31 23:00", freq="h")
+    end_year = start_year + years - 1
+    index = pd.date_range(f"{start_year}-01-01", f"{end_year}-12-31 23:00", freq="h")
     hours = index.hour.to_numpy()
     dow = index.dayofweek.to_numpy()
     doy = index.dayofyear.to_numpy()
@@ -76,9 +79,9 @@ def generate_food_delivery(
     base = base * _weekday_factor(dow)
     base = base * _seasonal_factor(doy)
 
-    # smooth yearly business growth trend (+25% by year end)
+    # smooth business growth trend (~+25% per year over the whole span)
     t = np.arange(len(index)) / len(index)
-    base = base * (1.0 + 0.25 * t)
+    base = base * (1.0 + 0.25 * years * t)
 
     # multiplicative noise — more realistic than additive
     noise = rng.normal(1.0, noise_level, size=len(index))
@@ -117,6 +120,22 @@ def month_profile(df: pd.DataFrame) -> np.ndarray:
     daily = df["orders"].resample("D").sum()
     prof = daily.groupby(daily.index.month).mean()
     return prof.reindex(range(1, 13)).to_numpy(dtype=float)
+
+
+def daily_totals(df: pd.DataFrame) -> pd.Series:
+    """Total orders per calendar day (a Series indexed by day).
+
+    Used by the day-level attention view to show a real sequence of days.
+    """
+    return df["orders"].resample("D").sum()
+
+
+def monthly_means(df: pd.DataFrame) -> pd.Series:
+    """Average daily orders per calendar month (Series indexed by month start).
+
+    Used by the monthly attention view to show a real sequence of months.
+    """
+    return df["orders"].resample("D").sum().resample("MS").mean()
 
 
 def one_day(df: pd.DataFrame, date: str | None = None) -> pd.DataFrame:
