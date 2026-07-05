@@ -1,18 +1,20 @@
-"""Симуляция двух режимов Chronos v2: zero-shot и fine-tuned.
+"""Simulation of the two Chronos v2 modes: zero-shot and fine-tuned.
 
-Мы НЕ запускаем настоящую нейросеть (она тяжёлая и требует GPU/загрузки весов).
-Вместо этого мы честно моделируем *принцип* разницы между режимами:
+We do NOT run the real neural network (it's heavy and needs a GPU / weight
+downloads). Instead we honestly model the *principle* behind the difference
+between the modes:
 
-* **Zero-shot** — предобученная модель знает «типичную форму суток» (утро тихо,
-  обед — холм, ужин — холм побольше), но не видела ИМЕННО ваш бизнес. Поэтому
-  она хорошо ловит форму дня, но промахивается по недельной специфике
-  (насколько именно у вас взлетают выходные).
+* **Zero-shot** — the pretrained model knows the "typical shape of a day"
+  (quiet morning, a lunch hill, a bigger dinner hill), but has not seen YOUR
+  specific business. So it captures the daily shape well but misses the weekly
+  specifics (exactly how much your weekends spike).
 
-* **Fine-tuned** — та же модель, дообученная на вашей истории. Она уже выучила
-  профиль «час × день недели», поэтому точно попадает и в будни, и в выходные.
+* **Fine-tuned** — the same model, further trained on your history. It has
+  already learned the "hour × day-of-week" profile, so it nails both weekdays
+  and weekends.
 
-Это ровно тот эффект, ради которого делают fine-tuning: адаптация общего
-предобученного «прайора» под конкретный ряд. Метрика качества — WAPE.
+This is exactly the effect fine-tuning is done for: adapting a general
+pretrained "prior" to a specific series. The quality metric is WAPE.
 """
 from __future__ import annotations
 
@@ -27,8 +29,8 @@ def wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
     WAPE = sum(|y - ŷ|) / sum(|y|).
 
-    В отличие от MAPE, устойчива к нулям и малым значениям, поэтому её любят
-    в ритейле и логистике. Возвращаем в процентах.
+    Unlike MAPE, it is robust to zeros and small values, which is why it's
+    popular in retail and logistics. Returned as a percentage.
     """
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
@@ -40,7 +42,7 @@ def wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 @dataclass
 class ForecastResult:
-    """Результат прогноза на тестовом окне."""
+    """Forecast result over the test window."""
 
     timestamps: pd.DatetimeIndex
     y_true: np.ndarray
@@ -51,7 +53,7 @@ class ForecastResult:
 
     @property
     def improvement_pct(self) -> float:
-        """На сколько процентов fine-tuning снизил ошибку относительно zero-shot."""
+        """By what percentage fine-tuning reduced the error relative to zero-shot."""
         if self.wape_zero_shot == 0:
             return 0.0
         return 100.0 * (self.wape_zero_shot - self.wape_fine_tuned) / self.wape_zero_shot
@@ -63,43 +65,44 @@ def make_forecasts(
     ft_noise: float = 0.05,
     seed: int = 7,
 ) -> ForecastResult:
-    """Построить прогнозы zero-shot и fine-tuned на последних ``horizon_days``.
+    """Build zero-shot and fine-tuned forecasts over the last ``horizon_days``.
 
-    Логика (осознанно простая и интерпретируемая):
+    The logic is deliberately simple and interpretable:
 
-    * профиль обучаем на ИСТОРИИ (всё, что раньше тестового окна);
-    * zero-shot ≈ профиль «по часу суток» (общий прайор формы дня);
-    * fine-tuned ≈ профиль «час × день недели» + мягкий тренд (выучил ваш ряд).
+    * the profile is learned on HISTORY (everything before the test window);
+    * zero-shot ≈ an "hour-of-day" profile (a general prior for the day's shape);
+    * fine-tuned ≈ an "hour × day-of-week" profile + a mild trend (learned your
+      series).
     """
     rng = np.random.default_rng(seed)
 
     work = df.copy()
     split = len(work) - horizon_days * 24
     if split <= 0:
-        raise ValueError("Слишком большой горизонт для данного объёма данных")
+        raise ValueError("Horizon is too large for the available amount of data")
 
     train = work.iloc[:split]
     test = work.iloc[split:]
 
-    # --- Zero-shot: только форма суток (час), без дня недели ---
+    # --- Zero-shot: day shape only (hour), no day of week ---
     prof_hour = train.groupby("hour")["orders"].mean()
     zero_shot = test["hour"].map(prof_hour).to_numpy(dtype=float)
 
-    # --- Fine-tuned: час × день недели (выучил недельную сезонность) ---
+    # --- Fine-tuned: hour × day-of-week (learned the weekly seasonality) ---
     prof_hd = train.groupby(["dow", "hour"])["orders"].mean()
     ft = np.array(
         [prof_hd.loc[(int(r.dow), int(r.hour))] for r in test.itertuples()],
         dtype=float,
     )
 
-    # учёт мягкого тренда роста: масштабируем под уровень последней недели истории
+    # account for the mild growth trend: scale to the level of the last week of history
     recent_level = train["orders"].iloc[-7 * 24 :].mean()
     hist_level = train["orders"].mean()
     trend_scale = recent_level / max(hist_level, 1e-6)
-    zero_shot = zero_shot  # zero-shot тренд не «чувствует»
+    zero_shot = zero_shot  # zero-shot doesn't "feel" the trend
     ft = ft * trend_scale
 
-    # немного неустранимого шума у fine-tuned (идеала не бывает)
+    # a bit of irreducible noise for fine-tuned (nothing is perfect)
     ft = ft * rng.normal(1.0, ft_noise, size=len(ft))
     ft = np.clip(ft, 0, None)
 

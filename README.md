@@ -1,62 +1,63 @@
 # 🎓 edu-ai-demos
 
-Набор **интерактивных обучающих демо** по AI/ML на [Streamlit](https://streamlit.io/).
-Каждое демо берёт одну тему, объясняет её **тремя уровнями сложности**
-(от интуиции для новичков до математики для продвинутых) и подкрепляет всё
-**интерактивными симуляциями**, которые можно покрутить руками.
+A set of **interactive educational demos** on AI/ML, built with
+[Streamlit](https://streamlit.io/). Each demo takes one topic, explains it at
+**three difficulty levels** (from intuition for beginners to the math for
+advanced readers), and backs it all with **interactive simulations** you can
+play with.
 
-## 🚀 Запуск
+## 🚀 Run
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Откроется браузер с главной страницей. Демо выбираются в боковом меню слева.
+Your browser opens on the landing page. Pick a demo from the sidebar on the left.
 
-## 📚 Демо
+## 📚 Demos
 
-### 🍔 Chronos v2 — прогноз заказов food-delivery
+### 🍔 Chronos v2 — food-delivery order forecasting
 
-Разбор принципов работы time-series foundation model от **Amazon** на живом
-примере — прогнозе почасовых заказов доставки еды. Пять разделов:
+A walkthrough of how Amazon's time-series foundation model works, on a live
+example — forecasting hourly food-delivery orders. Five sections:
 
-| Вкладка | Что показывает |
+| Tab | What it shows |
 |---|---|
-| 📈 **Данные** | Синтетический ряд за год с двумя суточными пиками — обед (~13:00) и ужин (~19:30), недельная сезонность, тренд роста. Профиль дня, тепловая карта «час × день недели». |
-| ⚔️ **Zero-shot vs Fine-tuned** | Сравнение двух режимов одной модели по метрике **WAPE**. Видно, где именно ошибается каждый режим и что даёт дообучение. |
-| 🎚️ **Теория (3 уровня)** | 🟢 Новичок · 🟡 Средний · 🔴 Продвинутый — от аналогий до токенизации, T5, attention и практики fine-tuning. |
-| 🔍 **Механизм внимания** | Интерактивная симуляция attention: как модель «оглядывается» на похожие часы прошлого. Плюс пример на словах. |
-| 🧩 **Многомерные ряды** | Симуляция ковариат (промо, дождь, температура): как внешние признаки объясняют спрос и снижают ошибку. |
+| 📈 **Data** | A synthetic year-long series with two daily peaks — lunch (~13:00) and dinner (~19:30), weekly seasonality, a growth trend. Day profile, "hour × day-of-week" heatmap. |
+| ⚔️ **Zero-shot vs Fine-tuned** | Comparison of the two modes of one model by the **WAPE** metric. You can see exactly where each mode errs and what fine-tuning buys you. |
+| 🎚️ **Theory (3 levels)** | 🟢 Beginner · 🟡 Intermediate · 🔴 Advanced — from analogies to tokenization, T5, attention, and fine-tuning practice. |
+| 🔍 **Attention mechanism** | An interactive attention simulation: how the model "looks back" at similar hours in the past. Plus a word-level example. |
+| 🧩 **Multivariate series** | A covariate simulation (promo, rain, temperature): how external features explain demand and reduce the error. |
 
-## 🗂️ Структура проекта
+## 🗂️ Project structure
 
 ```
 edu-ai-demos/
-├── app.py                     # главная страница-лендинг
+├── app.py                     # landing page
 ├── pages/
-│   └── 1_🍔_Chronos_v2.py     # демо Chronos v2 (5 вкладок)
-├── src/                       # вся логика без Streamlit (легко тестировать)
-│   ├── data.py                # генерация синтетических данных food-delivery
-│   ├── models.py              # zero-shot / fine-tuned + метрика WAPE
-│   ├── attention.py           # симуляция механизма внимания
-│   ├── multivariate.py        # многомерные ряды и ковариаты
-│   ├── theory.py              # тексты теории (3 уровня)
-│   └── viz.py                 # общая палитра и стиль графиков
-├── .streamlit/config.toml     # тема оформления
+│   └── 1_🍔_Chronos_v2.py     # Chronos v2 demo (5 tabs)
+├── src/                       # all logic, no Streamlit (easy to test)
+│   ├── data.py                # synthetic food-delivery data generation
+│   ├── models.py              # zero-shot / fine-tuned + the WAPE metric
+│   ├── attention.py           # attention-mechanism simulation
+│   ├── multivariate.py        # multivariate series and covariates
+│   ├── theory.py              # theory text (3 levels)
+│   └── viz.py                 # shared palette and chart style
+├── .streamlit/config.toml     # theme
 └── requirements.txt
 ```
 
-## ➕ Как добавить своё демо
+## ➕ How to add your own demo
 
-1. Создайте новый файл в `pages/`, например `2_🤖_My_Demo.py`
-   (номер задаёт порядок в меню, эмодзи — иконку).
-2. Общую логику выносите в `src/` — так её удобно переиспользовать и тестировать.
-3. Используйте палитру из `src/viz.py`, чтобы все демо выглядели как одна система.
+1. Create a new file in `pages/`, e.g. `2_🤖_My_Demo.py`
+   (the number sets the menu order, the emoji is the icon).
+2. Put shared logic in `src/` — that keeps it reusable and testable.
+3. Use the palette from `src/viz.py` so all demos look like one system.
 
-## ⚠️ Дисклеймер
+## ⚠️ Disclaimer
 
-Симуляции носят **учебный характер**: они иллюстрируют *принципы* работы моделей
-(токенизация, zero-shot vs fine-tuning, attention, ковариаты), а не запускают
-настоящие веса Chronos. Это сделано намеренно — чтобы демо было лёгким,
-воспроизводимым и запускалось где угодно без GPU.
+The simulations are **educational**: they illustrate the *principles* behind the
+models (tokenization, zero-shot vs fine-tuning, attention, covariates) rather
+than running the real Chronos weights. This is intentional — it keeps the demo
+lightweight, reproducible, and runnable anywhere without a GPU.

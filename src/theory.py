@@ -1,114 +1,123 @@
-"""Теоретический материал по Chronos v2 в трёх уровнях сложности.
+"""Theory material for Chronos v2 at three difficulty levels.
 
-Тексты вынесены отдельно от UI, чтобы их было легко править и переиспользовать.
+Kept separate from the UI so it's easy to edit and reuse.
 """
 
 BEGINNER = r"""
-### 🟢 Уровень 1 — Новичок: «на пальцах»
+### 🟢 Level 1 — Beginner: the plain-English version
 
-**Что вообще делает Chronos?**
-Представьте прогноз погоды, но вместо дождя мы предсказываем **сколько заказов
-еды придёт в каждый час**. Chronos — это большая нейросеть от Amazon, которая
-«прочитала» миллионы разных временных рядов (продажи, трафик, погоду, энергию)
-и научилась угадывать, *как ряд продолжится дальше*.
+**What does Chronos actually do?**
+Think of a weather forecast, but instead of rain we predict **how many food
+orders will arrive each hour**. Chronos is a large neural network from Amazon
+that has "read" millions of different time series (sales, traffic, weather,
+energy) and learned to guess *how a series continues*.
 
-**Ключевая идея — язык вместо чисел.**
-Chronos относится к ряду чисел так же, как языковая модель (типа ChatGPT) — к
-тексту. Каждое значение ряда превращается в «слово» (токен), а модель просто
-предсказывает **следующее слово**. Только «слова» здесь — это уровни заказов.
+**The key idea — language instead of numbers.**
+Chronos treats a series of numbers the same way a language model (like ChatGPT)
+treats text. Each value in the series becomes a "word" (a token), and the model
+simply predicts the **next word**. It's just that the "words" here are order
+levels.
 
-> 📌 Аналогия: вы читаете «утром тихо → в обед всплеск → вечером большой всплеск»
-> столько раз, что можете продолжить фразу, даже не зная, о каком именно
-> ресторане речь. Так же и Chronos «дочитывает» ваш день.
+> 📌 Analogy: you read "quiet in the morning → a spike at lunch → a big spike in
+> the evening" so many times that you can finish the sentence without even
+> knowing which restaurant it is. That's how Chronos "finishes" your day.
 
-**Zero-shot и Fine-tuned — в чём разница?**
-- 🟦 **Zero-shot** — модель смотрит на вашу историю *впервые* и сразу прогнозирует.
-  Как опытный курьер в новом городе: общие законы знает, но местных нюансов ещё нет.
-- 🟩 **Fine-tuned** — ту же модель немного «дообучили» на ваших данных.
-  Теперь курьер поработал у вас месяц и знает, что *по субботам вечером — завал*.
+**Zero-shot vs Fine-tuned — what's the difference?**
+- 🟦 **Zero-shot** — the model sees your history for the *first time* and
+  forecasts right away. Like an experienced courier in a new city: knows the
+  general rules, but not the local quirks yet.
+- 🟩 **Fine-tuned** — the same model, lightly "re-trained" on your data. Now the
+  courier has worked for you for a month and knows that *Saturday evenings get
+  slammed*.
 
-**WAPE** — это просто «на сколько процентов в среднем мы ошибаемся».
-Чем меньше — тем лучше. 8% ошибки лучше, чем 20%.
+**WAPE** is simply "on average, by what percentage are we wrong."
+Lower is better. An 8% error is better than 20%.
 """
 
 INTERMEDIATE = r"""
-### 🟡 Уровень 2 — Средний: как это устроено
+### 🟡 Level 2 — Intermediate: how it works
 
-**1. Токенизация ряда.**
-Chronos переводит непрерывные значения в дискретные токены в три шага:
-1. **Масштабирование** — ряд делят на его среднее (mean scaling), чтобы «5 заказов»
-   и «5000 заказов» выглядели для модели одинаково по форме.
-2. **Квантизация** — диапазон значений режут на `B` корзин (bins). Каждое значение
-   попадает в свою корзину → получаем номер токена, как букву в алфавите.
-3. Дальше это — обычная последовательность токенов, как предложение.
+**1. Tokenizing the series.**
+Chronos turns continuous values into discrete tokens in three steps:
+1. **Scaling** — the series is divided by its mean (mean scaling), so that
+   "5 orders" and "5000 orders" look the same to the model in terms of shape.
+2. **Quantization** — the value range is cut into `B` bins. Each value lands in
+   its bin → we get a token index, like a letter in an alphabet.
+3. From here it's an ordinary sequence of tokens, just like a sentence.
 
-**2. Архитектура — языковая модель (T5).**
-Первая версия Chronos использует encoder-decoder трансформер (семейство T5).
-Он предсказывает распределение вероятностей следующего токена, а не одно число.
-Поэтому мы можем сэмплировать **много траекторий** и строить доверительные
-интервалы (P10 / P50 / P90), а не только точечный прогноз.
+**2. Architecture — a language model (T5).**
+The first version of Chronos uses an encoder-decoder transformer (the T5
+family). It predicts a probability distribution over the next token, not a
+single number. This lets us sample **many trajectories** and build confidence
+intervals (P10 / P50 / P90) rather than just a point forecast.
 
 **3. Zero-shot vs Fine-tuning.**
-- *Zero-shot* работает за счёт **in-context learning**: вся ваша история подаётся
-  как «контекст», и модель продолжает её, опираясь на паттерны, выученные на
-  огромном корпусе рядов. Обучение весов не требуется.
-- *Fine-tuning* — несколько эпох дообучения на вашем ряде. Модель смещает свой
-  «прайор» под вашу специфику (например, силу недельной сезонности). Обычно даёт
-  заметный прирост точности за небольшую цену.
+- *Zero-shot* works through **in-context learning**: your entire history is fed
+  in as "context," and the model continues it, relying on patterns learned from
+  a huge corpus of series. No weight training is required.
+- *Fine-tuning* — a few epochs of extra training on your series. The model
+  shifts its "prior" toward your specifics (for example, the strength of the
+  weekly seasonality). It usually gives a noticeable accuracy boost for a small
+  cost.
 
-**4. Метрика WAPE.**
+**4. The WAPE metric.**
 $$\mathrm{WAPE} = \frac{\sum_t |y_t - \hat{y}_t|}{\sum_t |y_t|}$$
-В отличие от MAPE, не взрывается на нулевых/малых значениях (а в почасовых
-заказах ночью бывают нули). Поэтому WAPE — стандарт в ритейле и логистике.
+Unlike MAPE, it doesn't blow up on zero/small values (and hourly orders are
+sometimes zero at night). That's why WAPE is a standard in retail and logistics.
 
-**5. Что нового в Chronos v2.**
-Вторая версия сделала модель практичнее для бизнеса:
-- поддержка **ковариат** (промо, погода, цена) и **многомерных** рядов;
-- групповое / in-context внимание между связанными рядами;
-- быстрый инференс (в духе Chronos-Bolt: патчи + прямой multi-step прогноз).
+**5. What's new in Chronos v2.**
+The second version made the model more practical for business:
+- support for **covariates** (promos, weather, price) and **multivariate** series;
+- group / in-context attention between related series;
+- fast inference (in the spirit of Chronos-Bolt: patches + direct multi-step
+  forecasting).
 """
 
 ADVANCED = r"""
-### 🔴 Уровень 3 — Продвинутый: детали и математика
+### 🔴 Level 3 — Advanced: details and math
 
-**Токенизация и голова распределения.**
-Пусть ряд $x_{1:C}$ — контекст. Mean-scaling: $\tilde{x}_t = x_t / s$, где
-$s = \frac{1}{C}\sum |x_t|$. Затем квантизация в $B$ уровней (обычно $B=4096$)
-даёт токены $z_t \in \{1,\dots,B\}$. Модель учит
-$p_\theta(z_{t+1} \mid z_{1:t})$ через кросс-энтропию — то есть классификацию
-по корзинам, а не регрессию. Прогноз получают авторегрессионным сэмплированием
-$k$ траекторий и берут поквантильные оценки.
+**Tokenization and the distribution head.**
+Let the series $x_{1:C}$ be the context. Mean-scaling: $\tilde{x}_t = x_t / s$,
+where $s = \frac{1}{C}\sum |x_t|$. Then quantization into $B$ levels (typically
+$B=4096$) yields tokens $z_t \in \{1,\dots,B\}$. The model learns
+$p_\theta(z_{t+1} \mid z_{1:t})$ via cross-entropy — i.e. classification over
+bins, not regression. Forecasts are obtained by autoregressively sampling $k$
+trajectories and taking per-quantile estimates.
 
-**Attention (ядро трансформера).**
+**Attention (the transformer core).**
 $$\mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)V$$
-Каждый токен формирует запрос $Q$, ключи $K$ и значения $V$. Матрица
-$QK^\top/\sqrt{d_k}$ — попарные «сходства»; softmax по строке даёт веса; выход —
-взвешенная сумма $V$. Делитель $\sqrt{d_k}$ стабилизирует градиенты. Для рядов
-это позволяет напрямую «дотянуться» до релевантного прошлого (тот же час вчера,
-та же неделя) без затухания, как в RNN.
+Each token forms a query $Q$, keys $K$, and values $V$. The matrix
+$QK^\top/\sqrt{d_k}$ holds pairwise "similarities"; a row-wise softmax gives the
+weights; the output is a weighted sum of $V$. The $\sqrt{d_k}$ divisor
+stabilizes gradients. For time series this lets the model "reach" directly for
+the relevant past (the same hour yesterday, the same week) without the decay you
+get in an RNN.
 
-**От авторегрессии к патчам (Chronos-Bolt / v2).**
-Пословный авторегрессионный декодинг медленный (O(H) прогонов на горизонт $H$).
-Bolt-подход режет ряд на **патчи** (окна из нескольких точек → один токен) и
-предсказывает сразу весь горизонт (**direct multi-horizon**), что даёт кратное
-ускорение инференса и часто лучшую точность на длинных горизонтах.
+**From autoregression to patches (Chronos-Bolt / v2).**
+Token-by-token autoregressive decoding is slow (O(H) passes for a horizon $H$).
+The Bolt approach cuts the series into **patches** (a window of several points →
+one token) and predicts the whole horizon at once (**direct multi-horizon**),
+which gives a multiplicative speedup at inference and often better accuracy on
+long horizons.
 
-**Многомерность и ковариаты в v2.**
-Chronos v2 расширяет модель от univariate к **multivariate / covariate-aware**
-прогнозу: несколько связанных рядов и внешних признаков обрабатываются совместно
-через механизм внимания *между* рядами (cross-series / group attention). Модель
-учится, что, например, промо-флаг поднимает целевой ряд, а не прогнозирует его в
-вакууме. Это ровно то, что симулирует вкладка «Многомерные ряды».
+**Multivariate and covariates in v2.**
+Chronos v2 extends the model from univariate to **multivariate /
+covariate-aware** forecasting: several related series and external features are
+processed jointly through attention *between* series (cross-series / group
+attention). The model learns that, e.g., a promo flag lifts the target series
+rather than forecasting it in a vacuum. This is exactly what the "Multivariate
+series" tab simulates.
 
-**Практика fine-tuning.**
-- Замораживают/размораживают части сети; малый learning rate (адаптация прайора).
-- Валидация по времени (rolling / expanding origin), НЕ случайный split —
-  иначе утечка из будущего.
-- Метрики на квантилях: помимо WAPE смотрят на **weighted quantile loss (WQL)**,
-  чтобы оценивать качество интервалов, а не только медианы.
+**Fine-tuning in practice.**
+- Freeze/unfreeze parts of the network; small learning rate (adapting the prior).
+- Validate over time (rolling / expanding origin), NOT a random split — otherwise
+  you leak information from the future.
+- Metrics on quantiles: besides WAPE, look at the **weighted quantile loss (WQL)**
+  to assess interval quality, not just the median.
 
-**Подводные камни.**
-Утечка через масштаб (scaling считать только по train-окну), распределённый
-сдвиг (covariate shift) при смене сезона/промо-политики, и «слишком гладкий»
-zero-shot, который недооценивает редкие всплески — их как раз чинит fine-tuning.
+**Pitfalls.**
+Leakage through scaling (compute scaling on the train window only), distribution
+shift (covariate shift) when the season or promo policy changes, and a
+"too-smooth" zero-shot that underestimates rare spikes — which is exactly what
+fine-tuning fixes.
 """

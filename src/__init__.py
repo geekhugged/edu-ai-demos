@@ -1,5 +1,5 @@
 """Shared logic for edu-ai-demos.
 
-Каждый модуль здесь — это чистая (без Streamlit) логика, которую можно
-переиспользовать в разных демо и тестировать отдельно от UI.
+Every module here is pure (Streamlit-free) logic that can be reused across demos
+and tested independently of the UI.
 """

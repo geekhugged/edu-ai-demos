@@ -1,11 +1,11 @@
-"""Демо: Chronos v2 — прогноз заказов food-delivery.
+"""Demo: Chronos v2 — food-delivery order forecasting.
 
-Пять разделов (вкладок):
-  1. 📈 Данные         — синтетический ряд за год с двумя суточными пиками.
-  2. ⚔️ Zero-shot / FT  — сравнение двух режимов модели по WAPE.
-  3. 🎚️ Теория          — три уровня сложности.
-  4. 🔍 Внимание        — интерактивная симуляция attention.
-  5. 🧩 Многомерность   — симуляция ковариат / многомерных рядов.
+Five sections (tabs):
+  1. 📈 Data          — a synthetic year-long series with two daily peaks.
+  2. ⚔️ Zero-shot / FT — comparison of the two model modes by WAPE.
+  3. 🎚️ Theory         — three difficulty levels.
+  4. 🔍 Attention      — an interactive attention simulation.
+  5. 🧩 Multivariate   — a covariate / multivariate series simulation.
 """
 import sys
 from pathlib import Path
@@ -15,13 +15,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# гарантируем, что пакет src виден при запуске страницы напрямую
+# make sure the src package is importable when running this page directly
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src import theory
-from src.attention import run_attention, sentence_attention
+from src.attention import SENTENCE_TOKENS, run_attention, sentence_attention
 from src.data import daily_profile, generate_food_delivery, one_day
 from src.models import make_forecasts
 from src.multivariate import correlations, generate_multivariate, reconstruct
@@ -29,7 +29,7 @@ from src.viz import CATEGORICAL, COLORS, base_layout
 
 st.set_page_config(page_title="Chronos v2 — food delivery", page_icon="🍔", layout="wide")
 
-WEEKDAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 @st.cache_data(show_spinner=False)
@@ -43,52 +43,53 @@ def _mv(seed: int, bp: float, br: float, bt: float) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-st.title("🍔 Chronos v2: прогноз заказов food-delivery")
+st.title("🍔 Chronos v2: food-delivery order forecasting")
 st.markdown(
-    "Разбираем принципы работы **time-series foundation model** от Amazon "
-    "на живом примере: предсказываем почасовые заказы доставки еды."
+    "Let's break down how Amazon's **time-series foundation model** works on a "
+    "live example: predicting hourly food-delivery orders."
 )
 
 with st.sidebar:
-    st.header("⚙️ Параметры данных")
-    seed = st.slider("Seed (случайность)", 0, 100, 42)
-    noise = st.slider("Уровень шума", 0.02, 0.30, 0.10, 0.01)
-    st.caption("Крутите — весь ряд пересоберётся, а прогнозы и метрики пересчитаются.")
+    st.header("⚙️ Data parameters")
+    seed = st.slider("Seed (randomness)", 0, 100, 42)
+    noise = st.slider("Noise level", 0.02, 0.30, 0.10, 0.01)
+    st.caption("Move these — the whole series is rebuilt, and forecasts and metrics recompute.")
 
 df = _data(seed, noise)
 
 tab_data, tab_models, tab_theory, tab_attn, tab_mv = st.tabs(
     [
-        "📈 Данные",
+        "📈 Data",
         "⚔️ Zero-shot vs Fine-tuned",
-        "🎚️ Теория (3 уровня)",
-        "🔍 Механизм внимания",
-        "🧩 Многомерные ряды",
+        "🎚️ Theory (3 levels)",
+        "🔍 Attention mechanism",
+        "🧩 Multivariate series",
     ]
 )
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 1. ДАННЫЕ
+# 1. DATA
 # ═════════════════════════════════════════════════════════════════════════════
 with tab_data:
-    st.subheader("📈 Синтетический спрос на доставку еды за год")
+    st.subheader("📈 Synthetic food-delivery demand over a year")
     st.markdown(
-        "Данные почасовые. Внутри **каждого дня** — два «холма»: обеденный пик "
-        "около **13:00** (поменьше) и ужинный около **19:30** (побольше). "
-        "Плюс недельная сезонность (выходные активнее) и годовой рост бизнеса."
+        "The data is hourly. Within **each day** there are two hills: a lunch "
+        "peak around **13:00** (smaller) and a dinner peak around **19:30** "
+        "(larger). Plus weekly seasonality (weekends are busier) and yearly "
+        "business growth."
     )
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Всего часов", f"{len(df):,}")
-    c2.metric("Заказов за год", f"{int(df['orders'].sum()):,}")
-    c3.metric("Средний час", f"{df['orders'].mean():.1f}")
-    c4.metric("Пиковый час", f"{int(df['orders'].max())}")
+    c1.metric("Total hours", f"{len(df):,}")
+    c2.metric("Orders per year", f"{int(df['orders'].sum()):,}")
+    c3.metric("Avg per hour", f"{df['orders'].mean():.1f}")
+    c4.metric("Peak hour", f"{int(df['orders'].max())}")
 
-    st.markdown("#### 🔎 Один день крупным планом — видно два пика")
-    # выбор дня недели для показа профиля
+    st.markdown("#### 🔎 One day up close — the two peaks are visible")
+    # pick a weekday to show its profile
     dow_pick = st.select_slider(
-        "День недели", options=list(range(7)),
-        value=5, format_func=lambda d: WEEKDAYS_RU[d],
+        "Day of week", options=list(range(7)),
+        value=5, format_func=lambda d: WEEKDAYS[d],
     )
     day_df = df[df["dow"] == dow_pick]
     first_date = str(day_df["date"].iloc[0])
@@ -98,103 +99,105 @@ with tab_data:
     fig.add_trace(
         go.Scatter(
             x=day["hour"], y=day["orders"], mode="lines+markers",
-            line=dict(color=COLORS["accent"], width=3), name="Заказы",
+            line=dict(color=COLORS["accent"], width=3), name="Orders",
             fill="tozeroy", fillcolor="rgba(76,125,240,0.12)",
         )
     )
     fig.add_vrect(x0=12, x1=14, fillcolor=COLORS["lunch"], opacity=0.10, line_width=0,
-                  annotation_text="🍝 Обед", annotation_position="top left")
+                  annotation_text="🍝 Lunch", annotation_position="top left")
     fig.add_vrect(x0=18.5, x1=21, fillcolor=COLORS["dinner"], opacity=0.10, line_width=0,
-                  annotation_text="🍕 Ужин", annotation_position="top right")
-    fig.update_xaxes(title="Час суток", dtick=2)
-    fig.update_yaxes(title="Заказов в час")
-    base_layout(fig, height=380, title=f"Профиль дня — {WEEKDAYS_RU[dow_pick]}")
+                  annotation_text="🍕 Dinner", annotation_position="top right")
+    fig.update_xaxes(title="Hour of day", dtick=2)
+    fig.update_yaxes(title="Orders per hour")
+    base_layout(fig, height=380, title=f"Day profile — {WEEKDAYS[dow_pick]}")
     st.plotly_chart(fig, width="stretch")
 
-    with st.expander("📅 Показать весь год (почасовой ряд)"):
+    with st.expander("📅 Show the whole year (hourly series)"):
         fig_year = go.Figure()
         fig_year.add_trace(
             go.Scatter(x=df.index, y=df["orders"], mode="lines",
-                       line=dict(color=COLORS["accent"], width=0.6), name="Заказы")
+                       line=dict(color=COLORS["accent"], width=0.6), name="Orders")
         )
-        # скользящее среднее, чтобы виден был тренд/сезон
+        # daily average, to make the trend/season visible
         daily = df["orders"].resample("D").sum()
         fig_year.add_trace(
             go.Scatter(x=daily.index, y=daily / 24, mode="lines",
-                       line=dict(color=COLORS["dinner"], width=2), name="Средн. за день")
+                       line=dict(color=COLORS["dinner"], width=2), name="Daily average")
         )
-        fig_year.update_xaxes(title="Дата")
-        fig_year.update_yaxes(title="Заказов в час")
+        fig_year.update_xaxes(title="Date")
+        fig_year.update_yaxes(title="Orders per hour")
         base_layout(fig_year, height=340)
         st.plotly_chart(fig_year, width="stretch")
         st.caption(
-            "Видно: рост к концу года (бизнес растёт) и лёгкая сезонность "
-            "(зима активнее лета)."
+            "You can see growth toward year-end (the business is growing) and a "
+            "mild seasonality (winter is busier than summer)."
         )
 
-    st.markdown("#### 🗓️ Тепловая карта: час × день недели")
+    st.markdown("#### 🗓️ Heatmap: hour × day of week")
     pivot = df.pivot_table(index="dow", columns="hour", values="orders", aggfunc="mean")
     fig_hm = go.Figure(
         go.Heatmap(
-            z=pivot.values, x=pivot.columns, y=[WEEKDAYS_RU[d] for d in pivot.index],
-            colorscale="YlOrRd", colorbar=dict(title="заказов"),
+            z=pivot.values, x=pivot.columns, y=[WEEKDAYS[d] for d in pivot.index],
+            colorscale="YlOrRd", colorbar=dict(title="orders"),
         )
     )
-    fig_hm.update_xaxes(title="Час суток", dtick=2)
+    fig_hm.update_xaxes(title="Hour of day", dtick=2)
     base_layout(fig_hm, height=320)
     st.plotly_chart(fig_hm, width="stretch")
     st.caption(
-        "Две вертикальные «тёплые» полосы — обед и ужин. По выходным (Сб/Вс) "
-        "они ярче. Именно эту структуру и должна выучить модель."
+        "The two vertical 'warm' bands are lunch and dinner. On weekends "
+        "(Sat/Sun) they are brighter. This is exactly the structure the model "
+        "has to learn."
     )
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 2. МОДЕЛИ
+# 2. MODELS
 # ═════════════════════════════════════════════════════════════════════════════
 with tab_models:
-    st.subheader("⚔️ Zero-shot против Fine-tuned")
+    st.subheader("⚔️ Zero-shot vs Fine-tuned")
     st.markdown(
-        "Прогнозируем последние дни года и сравниваем два режима одной модели. "
-        "**Zero-shot** знает лишь общую «форму суток», **Fine-tuned** дообучен и "
-        "выучил вашу недельную специфику."
+        "We forecast the last days of the year and compare the two modes of one "
+        "model. **Zero-shot** only knows the general 'shape of a day', "
+        "**Fine-tuned** has been trained further and learned your weekly "
+        "specifics."
     )
 
-    horizon = st.slider("Горизонт прогноза (дней)", 3, 21, 14)
+    horizon = st.slider("Forecast horizon (days)", 3, 21, 14)
     res = make_forecasts(df, horizon_days=horizon, seed=seed)
 
     m1, m2, m3 = st.columns(3)
     m1.metric("WAPE · Zero-shot", f"{res.wape_zero_shot:.1f}%")
     m2.metric("WAPE · Fine-tuned", f"{res.wape_fine_tuned:.1f}%")
-    m3.metric("Прирост точности", f"−{res.improvement_pct:.0f}%",
-              help="На столько fine-tuning снизил ошибку относительно zero-shot")
+    m3.metric("Accuracy gain", f"−{res.improvement_pct:.0f}%",
+              help="How much fine-tuning reduced the error relative to zero-shot")
 
     if res.wape_fine_tuned < res.wape_zero_shot:
         st.success(
-            f"✅ Fine-tuning снизил ошибку с **{res.wape_zero_shot:.1f}%** до "
-            f"**{res.wape_fine_tuned:.1f}%** — модель адаптировалась под ваш ряд."
+            f"✅ Fine-tuning reduced the error from **{res.wape_zero_shot:.1f}%** to "
+            f"**{res.wape_fine_tuned:.1f}%** — the model adapted to your series."
         )
 
-    # сколько дней показывать (последние N)
-    show_days = st.slider("Показать последних дней на графике", 2, horizon, min(5, horizon))
+    # how many days to show (the last N)
+    show_days = st.slider("Days to show on the chart (most recent)", 2, horizon, min(5, horizon))
     n = show_days * 24
     ts = res.timestamps[-n:]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=ts, y=res.y_true[-n:], mode="lines", name="Факт",
+    fig.add_trace(go.Scatter(x=ts, y=res.y_true[-n:], mode="lines", name="Actual",
                              line=dict(color=COLORS["actual"], width=3)))
     fig.add_trace(go.Scatter(x=ts, y=res.zero_shot[-n:], mode="lines", name="Zero-shot",
                              line=dict(color=COLORS["zero_shot"], width=2, dash="dot")))
     fig.add_trace(go.Scatter(x=ts, y=res.fine_tuned[-n:], mode="lines", name="Fine-tuned",
                              line=dict(color=COLORS["fine_tuned"], width=2)))
-    fig.update_xaxes(title="Время")
-    fig.update_yaxes(title="Заказов в час")
-    base_layout(fig, height=420, title="Прогноз vs факт")
+    fig.update_xaxes(title="Time")
+    fig.update_yaxes(title="Orders per hour")
+    base_layout(fig, height=420, title="Forecast vs actual")
     st.plotly_chart(fig, width="stretch")
 
-    st.markdown("#### 📊 Где именно ошибаются модели")
+    st.markdown("#### 📊 Where exactly the models go wrong")
     err_zs = np.abs(res.y_true - res.zero_shot)
     err_ft = np.abs(res.y_true - res.fine_tuned)
-    # средняя ошибка по часу суток
+    # average error by hour of day
     hrs = res.timestamps.hour
     err_by_hour = pd.DataFrame({"hour": hrs, "zs": err_zs, "ft": err_ft}) \
         .groupby("hour").mean()
@@ -204,39 +207,39 @@ with tab_models:
                              name="Zero-shot", marker_color=COLORS["zero_shot"]))
     fig_err.add_trace(go.Bar(x=err_by_hour.index, y=err_by_hour["ft"],
                              name="Fine-tuned", marker_color=COLORS["fine_tuned"]))
-    fig_err.update_xaxes(title="Час суток", dtick=2)
-    fig_err.update_yaxes(title="Средняя ошибка |факт − прогноз|")
+    fig_err.update_xaxes(title="Hour of day", dtick=2)
+    fig_err.update_yaxes(title="Mean error |actual − forecast|")
     base_layout(fig_err, height=340)
     st.plotly_chart(fig_err, width="stretch")
     st.info(
-        "💡 Zero-shot сильнее промахивается **в пики** (обед и ужин) — он "
-        "недооценивает амплитуду, потому что не знает именно вашу нагрузку. "
-        "Fine-tuned выучил её и почти не ошибается."
+        "💡 Zero-shot misses harder **at the peaks** (lunch and dinner) — it "
+        "underestimates the amplitude because it doesn't know your specific "
+        "load. Fine-tuned learned it and barely errs."
     )
 
-    with st.expander("🤔 Почему так? (честно про симуляцию)"):
+    with st.expander("🤔 Why is that? (honest note about the simulation)"):
         st.markdown(
             """
-Мы не гоняем настоящие веса Chronos (это тяжело), а моделируем **сам принцип**:
+We don't run the real Chronos weights (that's heavy) — we model the **principle**:
 
-- **Zero-shot** ≈ прогноз по среднему профилю «час суток» из истории —
-  форма дня схвачена, но недельная специфика теряется.
-- **Fine-tuned** ≈ профиль «час × день недели» + учёт тренда — модель
-  «выучила» ваш ряд, поэтому ошибка ниже.
+- **Zero-shot** ≈ a forecast from the average "hour-of-day" profile of the
+  history — the day's shape is captured, but the weekly specifics are lost.
+- **Fine-tuned** ≈ an "hour × day-of-week" profile + trend awareness — the model
+  has "learned" your series, so its error is lower.
 
-Это ровно тот эффект, ради которого делают fine-tuning реальной модели:
-общий предобученный прайор адаптируется под конкретные данные.
+This is exactly the effect fine-tuning a real model is done for: a general
+pretrained prior adapts to the specific data.
 """
         )
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 3. ТЕОРИЯ
+# 3. THEORY
 # ═════════════════════════════════════════════════════════════════════════════
 with tab_theory:
-    st.subheader("🎚️ Теория в трёх уровнях сложности")
+    st.subheader("🎚️ Theory at three difficulty levels")
     level = st.radio(
-        "Выберите уровень",
-        ["🟢 Новичок", "🟡 Средний", "🔴 Продвинутый"],
+        "Choose a level",
+        ["🟢 Beginner", "🟡 Intermediate", "🔴 Advanced"],
         horizontal=True,
     )
     st.divider()
@@ -248,42 +251,43 @@ with tab_theory:
         st.markdown(theory.ADVANCED)
 
     st.divider()
-    with st.expander("📎 Полезные ссылки и термины"):
+    with st.expander("📎 Useful links and terms"):
         st.markdown(
             """
-- **Chronos** (Amazon Science) — «Chronos: Learning the Language of Time Series».
-- **Chronos-Bolt** — быстрый вариант на патчах с прямым multi-horizon прогнозом.
-- **T5** — encoder-decoder трансформер, основа первой версии Chronos.
-- **WAPE / WQL** — метрики точности точечного прогноза и квантилей.
-- **In-context learning** — способность модели «учиться» прямо из контекста без
-  обновления весов (основа zero-shot).
+- **Chronos** (Amazon Science) — "Chronos: Learning the Language of Time Series".
+- **Chronos-Bolt** — a fast, patch-based variant with direct multi-horizon forecasting.
+- **T5** — an encoder-decoder transformer, the backbone of the first Chronos.
+- **WAPE / WQL** — metrics for point-forecast and quantile accuracy.
+- **In-context learning** — the model's ability to "learn" straight from the
+  context without updating weights (the basis of zero-shot).
 """
         )
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 4. ВНИМАНИЕ
+# 4. ATTENTION
 # ═════════════════════════════════════════════════════════════════════════════
 with tab_attn:
-    st.subheader("🔍 Как работает механизм внимания (attention)")
+    st.subheader("🔍 How the attention mechanism works")
     st.markdown(
-        "**Простая идея:** чтобы предсказать заказы в нужный час, модель "
-        "«оглядывается назад» и **внимательнее смотрит на похожие часы** в "
-        "прошлом. Ниже — живая симуляция."
+        "**The simple idea:** to predict the orders in a given hour, the model "
+        "**looks back and pays more attention to similar hours** in the past. "
+        "Below is a live simulation."
     )
 
-    st.markdown("#### 🎯 Внимание на временном ряде")
+    st.markdown("#### 🎯 Attention on a time series")
     colA, colB = st.columns([1, 2])
     with colA:
-        query_hour = st.slider("Какой час прогнозируем? (query)", 0, 23, 19)
-        temp = st.slider("Резкость внимания (temperature)", 0.2, 3.0, 1.0, 0.1,
-                         help="Меньше — внимание острее (фокус на одном часе). "
-                              "Больше — размазаннее (смотрим на всё понемногу).")
+        query_hour = st.slider("Which hour are we forecasting? (query)", 0, 23, 19)
+        temp = st.slider("Attention sharpness (temperature)", 0.2, 3.0, 1.0, 0.1,
+                         help="Lower — sharper attention (focus on one hour). "
+                              "Higher — more diffuse (look at everything a little).")
         st.caption(
-            "Query — час, который мы хотим предсказать. Keys — часы из прошлого. "
-            "Модель считает сходство и раздаёт **веса внимания**."
+            "The query is the hour we want to predict. The keys are hours from "
+            "the past. The model computes similarity and hands out **attention "
+            "weights**."
         )
 
-    # ключи: 24 часа «вчерашнего» типичного дня
+    # keys: 24 hours of a "yesterday" typical day
     prof = daily_profile(np.arange(24))
     key_hours = np.arange(24)
     attn = run_attention(key_hours, prof, query_hour=query_hour, temperature=temp)
@@ -297,75 +301,77 @@ with tab_attn:
                     color=attn.weights, colorscale="Blues",
                     line=dict(width=0),
                 ),
-                name="Вес внимания",
+                name="Attention weight",
             )
         )
         fig_a.add_vline(x=query_hour, line=dict(color=COLORS["dinner"], width=2, dash="dash"),
                         annotation_text="query", annotation_position="top")
-        fig_a.update_xaxes(title="Час суток (ключи из прошлого)", dtick=2)
-        fig_a.update_yaxes(title="Вес внимания (сумма = 1)")
-        base_layout(fig_a, height=340, title="Куда «смотрит» модель")
+        fig_a.update_xaxes(title="Hour of day (keys from the past)", dtick=2)
+        fig_a.update_yaxes(title="Attention weight (sums to 1)")
+        base_layout(fig_a, height=340, title="Where the model 'looks'")
         st.plotly_chart(fig_a, width="stretch")
 
     top_idx = int(np.argmax(attn.weights))
     st.success(
-        f"🔦 Больше всего внимания (**{attn.weights[top_idx]*100:.0f}%**) уходит на "
-        f"**{top_idx}:00** — ближайший по смыслу час к запросу **{query_hour}:00**. "
-        f"Прогноз = взвешенная сумма ≈ **{attn.prediction:.1f}** заказов."
+        f"🔦 Most of the attention (**{attn.weights[top_idx]*100:.0f}%**) goes to "
+        f"**{top_idx}:00** — the hour closest in meaning to the query "
+        f"**{query_hour}:00**. Forecast = weighted sum ≈ **{attn.prediction:.1f}** "
+        f"orders."
     )
     st.caption(
-        "Обратите внимание: 23:00 и 00:00 модель считает соседними — потому что "
-        "час закодирован по кругу (sin/cos), а не прямой цифрой."
+        "Notice: the model treats 23:00 and 00:00 as neighbors — because the "
+        "hour is encoded on a circle (sin/cos), not as a plain number."
     )
 
     st.divider()
-    st.markdown("#### 💬 То же самое, но на словах")
+    st.markdown("#### 💬 The same thing, but on words")
     st.markdown(
-        "Внимание работает и с текстом. Выберите слово — и увидите, на какие "
-        "другие слова оно «смотрит». Связанные по смыслу слова притягиваются."
+        "Attention works with text too. Pick a word — and you'll see which other "
+        "words it 'looks at'. Semantically related words attract each other."
     )
-    tokens = ["дождь", "идёт", "поэтому", "заказы", "еды", "растут"]
-    focus = st.select_slider("Выбранное слово (query)", options=list(range(len(tokens))),
-                             value=3, format_func=lambda i: tokens[i])
+    tokens = SENTENCE_TOKENS
+    focus = st.select_slider("Selected word (query)", options=list(range(len(tokens))),
+                             value=4, format_func=lambda i: tokens[i])
     w = sentence_attention(tokens, focus, temperature=0.7)
 
     fig_s = go.Figure(
         go.Bar(x=tokens, y=w, marker=dict(color=w, colorscale="Teal"))
     )
-    fig_s.update_yaxes(title="Вес внимания")
-    base_layout(fig_s, height=300, title=f"«{tokens[focus]}» смотрит на…")
+    fig_s.update_yaxes(title="Attention weight")
+    base_layout(fig_s, height=300, title=f"'{tokens[focus]}' looks at…")
     st.plotly_chart(fig_s, width="stretch")
     st.info(
-        "💡 Слово **«заказы»** сильнее всего связано с **«еды»** и **«растут»** — "
-        "модель улавливает смысловую близость, а не просто соседство."
+        "💡 The word **'orders'** is most strongly linked to **'food'** and "
+        "**'grow'** — the model picks up semantic closeness, not just adjacency."
     )
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 5. МНОГОМЕРНЫЕ РЯДЫ
+# 5. MULTIVARIATE SERIES
 # ═════════════════════════════════════════════════════════════════════════════
 with tab_mv:
-    st.subheader("🧩 Многомерные ряды и ковариаты")
+    st.subheader("🧩 Multivariate series and covariates")
     st.markdown(
-        "Chronos v2 умеет учитывать не только сам ряд заказов, но и **внешние "
-        "признаки** (covariates): погоду, дождь, промо-акции. Ниже — симуляция: "
-        "включайте ковариаты и смотрите, как улучшается восстановление ряда."
+        "Chronos v2 can account not only for the order series itself but also "
+        "for **external features** (covariates): weather, rain, promotions. "
+        "Below is a simulation: switch covariates on and watch the "
+        "reconstruction of the series improve."
     )
 
-    st.markdown("#### 🎛️ Сила влияния ковариат")
+    st.markdown("#### 🎛️ Strength of covariate influence")
     cc1, cc2, cc3 = st.columns(3)
-    bp = cc1.slider("Промо-акция ↑", 0.0, 0.8, 0.35, 0.05)
-    br = cc2.slider("Дождь ↑", 0.0, 0.6, 0.25, 0.05)
-    bt = cc3.slider("Температура (↑ темп. → ↓ заказы)", -0.4, 0.0, -0.15, 0.05)
+    bp = cc1.slider("Promotion ↑", 0.0, 0.8, 0.35, 0.05)
+    br = cc2.slider("Rain ↑", 0.0, 0.6, 0.25, 0.05)
+    bt = cc3.slider("Temperature (↑ temp → ↓ orders)", -0.4, 0.0, -0.15, 0.05)
 
     mv = _mv(seed, bp, br, bt)
 
-    # многопанельный график: целевой ряд + ковариаты
-    st.markdown("#### 📊 Целевой ряд и его ковариаты")
+    # multi-panel chart: target series + covariates
+    st.markdown("#### 📊 The target series and its covariates")
     series_cfg = [
-        ("orders", "Заказы (target)", CATEGORICAL[0]),
-        ("temperature", "Температура, °C", CATEGORICAL[1]),
-        ("rain", "Дождь (0..1)", CATEGORICAL[2]),
-        ("promo", "Промо (0/1)", CATEGORICAL[3]),
+        ("orders", "Orders (target)", CATEGORICAL[0]),
+        ("temperature", "Temperature, °C", CATEGORICAL[1]),
+        ("rain", "Rain (0..1)", CATEGORICAL[2]),
+        ("promo", "Promo (0/1)", CATEGORICAL[3]),
     ]
     from plotly.subplots import make_subplots
 
@@ -388,44 +394,44 @@ with tab_mv:
     fig_mv.update_yaxes(showgrid=True, gridcolor=COLORS["grid"])
     st.plotly_chart(fig_mv, width="stretch")
     st.caption(
-        "Приглядитесь: всплески заказов совпадают с промо-днями и дождливыми "
-        "часами. Модель может использовать эти сигналы для прогноза."
+        "Look closely: order spikes line up with promo days and rainy hours. "
+        "The model can use these signals for the forecast."
     )
 
-    st.markdown("#### 🧪 Что даёт учёт ковариат")
+    st.markdown("#### 🧪 What accounting for covariates gives you")
     st.markdown(
-        "Включим «модель», которая пытается восстановить заказы. Добавляйте "
-        "ковариаты по одной — и следите за **WAPE**."
+        "Let's turn on a 'model' that tries to reconstruct the orders. Add "
+        "covariates one by one and watch the **WAPE**."
     )
     u1, u2, u3 = st.columns(3)
-    use_promo = u1.checkbox("Учитывать промо", value=True)
-    use_rain = u2.checkbox("Учитывать дождь", value=True)
-    use_temp = u3.checkbox("Учитывать температуру", value=False)
+    use_promo = u1.checkbox("Use promo", value=True)
+    use_rain = u2.checkbox("Use rain", value=True)
+    use_temp = u3.checkbox("Use temperature", value=False)
 
     recon, w_full = reconstruct(mv, use_promo, use_rain, use_temp, bp, br, bt)
     _, w_none = reconstruct(mv, False, False, False, bp, br, bt)
 
     k1, k2 = st.columns(2)
-    k1.metric("WAPE без ковариат", f"{w_none:.1f}%")
-    k2.metric("WAPE с выбранными", f"{w_full:.1f}%",
+    k1.metric("WAPE without covariates", f"{w_none:.1f}%")
+    k2.metric("WAPE with selected", f"{w_full:.1f}%",
               delta=f"{w_full - w_none:.1f}%", delta_color="inverse")
 
     show_n = 5 * 24
     fig_r = go.Figure()
     fig_r.add_trace(go.Scatter(x=mv.index[-show_n:], y=mv["orders"].iloc[-show_n:],
-                               mode="lines", name="Факт",
+                               mode="lines", name="Actual",
                                line=dict(color=COLORS["actual"], width=3)))
     fig_r.add_trace(go.Scatter(x=mv.index[-show_n:], y=recon[-show_n:],
-                               mode="lines", name="Восстановление",
+                               mode="lines", name="Reconstruction",
                                line=dict(color=COLORS["fine_tuned"], width=2)))
-    fig_r.update_xaxes(title="Время")
-    fig_r.update_yaxes(title="Заказов в час")
-    base_layout(fig_r, height=360, title="Восстановление ряда из ковариат")
+    fig_r.update_xaxes(title="Time")
+    fig_r.update_yaxes(title="Orders per hour")
+    base_layout(fig_r, height=360, title="Reconstructing the series from covariates")
     st.plotly_chart(fig_r, width="stretch")
 
-    st.markdown("#### 🔥 Корреляции между рядами")
+    st.markdown("#### 🔥 Correlations between the series")
     corr = correlations(mv)
-    labels = ["Заказы", "Темп.", "Дождь", "Промо", "Выходной"]
+    labels = ["Orders", "Temp.", "Rain", "Promo", "Weekend"]
     fig_c = go.Figure(
         go.Heatmap(
             z=corr.values, x=labels, y=labels, colorscale="RdBu", zmid=0,
@@ -436,7 +442,8 @@ with tab_mv:
     base_layout(fig_c, height=380)
     st.plotly_chart(fig_c, width="stretch")
     st.info(
-        "💡 Положительная корреляция заказов с **промо** и **дождём**, "
-        "отрицательная с **температурой** (в жару заказывают меньше). "
-        "Именно такие связи многомерная модель ловит через внимание *между* рядами."
+        "💡 Orders correlate positively with **promo** and **rain**, and "
+        "negatively with **temperature** (people order less in the heat). These "
+        "are exactly the links a multivariate model captures through attention "
+        "*between* series."
     )

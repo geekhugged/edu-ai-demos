@@ -1,12 +1,12 @@
-"""Генерация синтетических данных food-delivery заказов.
+"""Synthetic food-delivery order data generation.
 
-Данные почасовые за год. Внутри суток — два «холма»:
-  * обеденный пик около 13:00 (поменьше);
-  * ужинный пик около 19:30 (побольше).
+Hourly data across a year. Within each day there are two "hills":
+  * a lunch peak around 13:00 (smaller);
+  * a dinner peak around 19:30 (larger).
 
-Плюс недельная сезонность (выходные активнее), плавный годовой тренд роста,
-мягкая сезонность по месяцам и реалистичный шум. Всё детерминировано через
-seed, чтобы демо было воспроизводимым.
+Plus weekly seasonality (weekends are busier), a smooth yearly growth trend,
+mild monthly seasonality, and realistic noise. Everything is deterministic via
+a seed, so the demo is reproducible.
 """
 from __future__ import annotations
 
@@ -15,34 +15,34 @@ import pandas as pd
 
 
 def _gaussian_peak(hours: np.ndarray, center: float, width: float, height: float) -> np.ndarray:
-    """Один колоколообразный «холм» активности в течение суток."""
+    """A single bell-shaped "hill" of activity during the day."""
     return height * np.exp(-0.5 * ((hours - center) / width) ** 2)
 
 
 def daily_profile(hours: np.ndarray) -> np.ndarray:
-    """Базовый профиль заказов по часам суток (без учёта дня недели/сезона).
+    """Base order profile by hour of day (ignoring weekday/season).
 
-    Возвращает средний уровень заказов для каждого часа [0..23].
+    Returns the average order level for each hour [0..23].
     """
-    lunch = _gaussian_peak(hours, center=13.0, width=1.1, height=45.0)   # обед — холм поменьше
-    dinner = _gaussian_peak(hours, center=19.5, width=1.6, height=75.0)  # ужин — холм побольше
-    # небольшая ночная/утренняя база, чтобы линия не падала в ноль
+    lunch = _gaussian_peak(hours, center=13.0, width=1.1, height=45.0)   # lunch — smaller hill
+    dinner = _gaussian_peak(hours, center=19.5, width=1.6, height=75.0)  # dinner — larger hill
+    # small night/morning baseline so the line doesn't drop to zero
     base = 6.0 + 3.0 * np.exp(-0.5 * ((hours - 22.0) / 3.0) ** 2)
     return lunch + dinner + base
 
 
 def _weekday_factor(dow: np.ndarray) -> np.ndarray:
-    """Множитель активности по дню недели (0=Пн ... 6=Вс).
+    """Activity multiplier by day of week (0=Mon ... 6=Sun).
 
-    Пятница/суббота/воскресенье заметно активнее — люди чаще заказывают еду.
+    Friday/Saturday/Sunday are noticeably busier — people order food more often.
     """
     factors = np.array([0.92, 0.90, 0.95, 1.00, 1.18, 1.30, 1.22])
     return factors[dow]
 
 
 def _seasonal_factor(day_of_year: np.ndarray) -> np.ndarray:
-    """Мягкая годовая сезонность: зима активнее лета (готовить лень / холодно)."""
-    # косинус с минимумом летом (день ~200) и максимумом зимой
+    """Mild yearly seasonality: winter is busier than summer (cold / lazy to cook)."""
+    # cosine with a minimum in summer (day ~200) and a maximum in winter
     phase = 2 * np.pi * (day_of_year - 200) / 365.0
     return 1.0 + 0.12 * np.cos(phase)
 
@@ -52,18 +52,18 @@ def generate_food_delivery(
     seed: int = 42,
     noise_level: float = 0.10,
 ) -> pd.DataFrame:
-    """Сгенерировать почасовой ряд заказов food-delivery за год.
+    """Generate an hourly food-delivery order series for one year.
 
     Parameters
     ----------
-    year : год для индекса дат.
-    seed : зерно генератора случайных чисел.
-    noise_level : относительный уровень мультипликативного шума (0..1).
+    year : year for the date index.
+    seed : random number generator seed.
+    noise_level : relative level of multiplicative noise (0..1).
 
     Returns
     -------
-    DataFrame с DatetimeIndex (частота 1 час) и колонкой ``orders`` (int).
-    Дополнительно — служебные колонки hour / dow / date для группировок.
+    DataFrame with a DatetimeIndex (hourly frequency) and an ``orders`` column
+    (int). Plus helper columns hour / dow / date for grouping.
     """
     rng = np.random.default_rng(seed)
 
@@ -76,11 +76,11 @@ def generate_food_delivery(
     base = base * _weekday_factor(dow)
     base = base * _seasonal_factor(doy)
 
-    # плавный годовой тренд роста бизнеса (+25% к концу года)
+    # smooth yearly business growth trend (+25% by year end)
     t = np.arange(len(index)) / len(index)
     base = base * (1.0 + 0.25 * t)
 
-    # мультипликативный шум — реалистичнее, чем аддитивный
+    # multiplicative noise — more realistic than additive
     noise = rng.normal(1.0, noise_level, size=len(index))
     orders = base * np.clip(noise, 0.4, 1.8)
 
@@ -100,9 +100,9 @@ def generate_food_delivery(
 
 
 def one_day(df: pd.DataFrame, date: str | None = None) -> pd.DataFrame:
-    """Вырезать один день (по умолчанию — типичную субботу) для показа двух пиков."""
+    """Slice out a single day (a typical Saturday by default) to show the two peaks."""
     if date is None:
-        # берём первую субботу в данных
+        # take the first Saturday in the data
         saturdays = df[df["dow"] == 5]
         date = str(saturdays["date"].iloc[0])
     return df[df["date"].astype(str) == str(date)]

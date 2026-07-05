@@ -1,9 +1,9 @@
-"""edu-ai-demos — набор интерактивных обучающих демо по AI/ML.
+"""edu-ai-demos — a set of interactive educational demos on AI/ML.
 
-Главная страница-лендинг. Каждое демо живёт в отдельном файле в папке `pages/`
-и автоматически появляется в боковом меню Streamlit.
+The landing page. Each demo lives in its own file in the `pages/` folder and
+automatically shows up in the Streamlit sidebar.
 
-Запуск:  streamlit run app.py
+Run with:  streamlit run app.py
 """
 import streamlit as st
 
@@ -15,58 +15,58 @@ st.set_page_config(
 )
 
 st.title("🎓 edu-ai-demos")
-st.subheader("Интерактивные демо, чтобы разбираться в AI/ML на практике")
+st.subheader("Interactive demos for learning AI/ML hands-on")
 
 st.markdown(
     """
-Это учебная площадка: каждое демо берёт одну тему и объясняет её **тремя
-уровнями** — от интуиции для новичков до математики для продвинутых — и
-подкрепляет всё **интерактивными симуляциями**, которые можно покрутить руками.
+This is a learning playground: each demo takes one topic and explains it at
+**three levels** — from intuition for beginners to the math for advanced
+readers — and backs it all with **interactive simulations** you can play with.
 
-👈 Выбирайте демо в боковом меню слева.
+👈 Pick a demo from the sidebar on the left.
 """
 )
 
 st.divider()
 
-st.markdown("### 📚 Доступные демо")
+st.markdown("### 📚 Available demos")
 
 col1, col2 = st.columns(2)
 
 with col1:
     with st.container(border=True):
-        st.markdown("#### 🍔 Chronos v2 — прогноз заказов food-delivery")
+        st.markdown("#### 🍔 Chronos v2 — food-delivery order forecasting")
         st.markdown(
             """
-Как time-series foundation model от **Amazon** предсказывает спрос.
+How **Amazon's** time-series foundation model predicts demand.
 
-- 📈 синтетические данные за год с двумя суточными пиками (обед + ужин);
-- ⚔️ сравнение **zero-shot** vs **fine-tuned** по метрике **WAPE**;
-- 🎚️ три уровня теории — от «на пальцах» до математики;
-- 🔍 интерактивная симуляция **механизма внимания**;
-- 🧩 симуляция **многомерных рядов** с ковариатами.
+- 📈 synthetic year-long data with two daily peaks (lunch + dinner);
+- ⚔️ **zero-shot** vs **fine-tuned** compared on the **WAPE** metric;
+- 🎚️ three levels of theory — from plain English to the math;
+- 🔍 an interactive **attention-mechanism** simulation;
+- 🧩 a **multivariate series** simulation with covariates.
 """
         )
-        st.page_link("pages/1_🍔_Chronos_v2.py", label="Открыть демо", icon="➡️")
+        st.page_link("pages/1_🍔_Chronos_v2.py", label="Open demo", icon="➡️")
 
 with col2:
     with st.container(border=True):
-        st.markdown("#### ➕ Скоро новые демо")
+        st.markdown("#### ➕ More demos coming soon")
         st.markdown(
             """
-Площадка расширяется. Планируются темы:
+The playground keeps growing. Planned topics:
 
-- 🤖 attention / трансформеры с нуля;
-- 🎯 embeddings и векторный поиск;
-- 🖼️ диффузионные модели;
-- 🧠 RAG-пайплайны.
+- 🤖 attention / transformers from scratch;
+- 🎯 embeddings and vector search;
+- 🖼️ diffusion models;
+- 🧠 RAG pipelines.
 
-*Хотите добавить своё демо — просто создайте новый файл в `pages/`.*
+*Want to add your own demo — just create a new file in `pages/`.*
 """
         )
 
 st.divider()
 st.caption(
-    "Симуляции носят учебный характер и иллюстрируют принципы работы моделей, "
-    "а не воспроизводят их веса дословно."
+    "The simulations are educational and illustrate how the models work in "
+    "principle, rather than reproducing their weights verbatim."
 )

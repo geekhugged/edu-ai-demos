@@ -1,15 +1,15 @@
-"""Мини-симуляция механизма внимания (attention) для новичков.
+"""A mini-simulation of the attention mechanism, for beginners.
 
-Идея, которую хотим показать «на пальцах»:
+The idea we want to show intuitively:
 
-    Чтобы предсказать заказы в конкретный час (например, 19:00 — ужин),
-    модель «оглядывается назад» и смотрит на похожие моменты в прошлом.
-    На похожие часы она смотрит ВНИМАТЕЛЬНО (большой вес), на непохожие —
-    почти не смотрит (маленький вес). Прогноз = взвешенная сумма прошлого.
+    To predict the orders in a particular hour (say 19:00 — dinner), the model
+    "looks back" at similar moments in the past. It looks CAREFULLY at similar
+    hours (a large weight) and barely looks at dissimilar ones (a small weight).
+    The forecast = a weighted sum of the past.
 
-Это и есть attention: query (что ищем) сравнивается с keys (что есть в
-прошлом), из сходства получаем веса через softmax, и берём взвешенную сумму
-values. Никакой тяжёлой математики — только скалярное произведение и softmax.
+That's attention: a query (what we're looking for) is compared with keys (what's
+in the past), the similarity is turned into weights via softmax, and we take a
+weighted sum of the values. No heavy math — just a dot product and a softmax.
 """
 from __future__ import annotations
 
@@ -19,10 +19,10 @@ import numpy as np
 
 
 def softmax(x: np.ndarray, temperature: float = 1.0) -> np.ndarray:
-    """Softmax с «температурой» (резкостью).
+    """Softmax with a "temperature" (sharpness).
 
-    temperature < 1  → внимание острее (почти all-in в один ключ);
-    temperature > 1  → внимание размазаннее (смотрим на всё понемногу).
+    temperature < 1  → sharper attention (almost all-in on one key);
+    temperature > 1  → more diffuse attention (looking at everything a little).
     """
     z = np.asarray(x, dtype=float) / max(temperature, 1e-6)
     z = z - z.max()
@@ -31,9 +31,9 @@ def softmax(x: np.ndarray, temperature: float = 1.0) -> np.ndarray:
 
 
 def hour_embedding(hour: float) -> np.ndarray:
-    """Циклическое представление часа суток двумя числами (sin, cos).
+    """A cyclic representation of the hour of day as two numbers (sin, cos).
 
-    Благодаря этому 23:00 и 00:00 оказываются «рядом», а не на разных концах.
+    Thanks to this, 23:00 and 00:00 end up "close" rather than at opposite ends.
     """
     ang = 2 * np.pi * hour / 24.0
     return np.array([np.sin(ang), np.cos(ang)])
@@ -41,11 +41,11 @@ def hour_embedding(hour: float) -> np.ndarray:
 
 @dataclass
 class AttentionResult:
-    key_hours: np.ndarray      # часы токенов-ключей (что было в прошлом)
-    key_values: np.ndarray     # значения (заказы) в эти часы
-    scores: np.ndarray         # «сырое» сходство query·key
-    weights: np.ndarray        # веса внимания после softmax (сумма = 1)
-    prediction: float          # итоговый прогноз = взвешенная сумма values
+    key_hours: np.ndarray      # hours of the key tokens (what was in the past)
+    key_values: np.ndarray     # values (orders) at those hours
+    scores: np.ndarray         # "raw" query·key similarity
+    weights: np.ndarray        # attention weights after softmax (sum = 1)
+    prediction: float          # final forecast = weighted sum of values
     query_hour: float
 
 
@@ -55,13 +55,13 @@ def run_attention(
     query_hour: float,
     temperature: float = 1.0,
 ) -> AttentionResult:
-    """Посчитать attention для одного запроса.
+    """Compute attention for a single query.
 
-    * Query — вектор целевого часа (какой момент прогнозируем).
-    * Keys — векторы часов из прошлого.
-    * Score = Q · K (скалярное произведение: чем ближе час, тем больше).
+    * Query — the vector of the target hour (which moment we're forecasting).
+    * Keys — the vectors of hours from the past.
+    * Score = Q · K (dot product: the closer the hour, the larger it is).
     * Weights = softmax(Score).
-    * Prediction = сумма weights * values.
+    * Prediction = sum of weights * values.
     """
     key_hours = np.asarray(key_hours, dtype=float)
     key_values = np.asarray(key_values, dtype=float)
@@ -69,8 +69,8 @@ def run_attention(
     q = hour_embedding(query_hour)
     keys = np.stack([hour_embedding(h) for h in key_hours])
 
-    scores = keys @ q  # (N,) скалярные произведения
-    # масштаб, как в трансформере (делим на sqrt(d)), d=2
+    scores = keys @ q  # (N,) dot products
+    # scale, as in the transformer (divide by sqrt(d)), d=2
     scores = scores / np.sqrt(keys.shape[1])
     weights = softmax(scores, temperature=temperature)
     prediction = float((weights * key_values).sum())
@@ -85,21 +85,25 @@ def run_attention(
     )
 
 
-def sentence_attention(tokens: list[str], focus_idx: int, temperature: float = 1.0):
-    """Совсем простой пример внимания на словах (для интуиции).
+# tokens used by the word-level attention example (kept here so UI and logic agree)
+SENTENCE_TOKENS = ["rain", "falls", "so", "food", "orders", "grow"]
 
-    Каждому слову даём маленький «смысловой» вектор, а вниманием показываем,
-    на какие слова смотрит выбранное слово. Веса подобраны так, чтобы
-    связанные по смыслу слова притягивались (еда↔вкусно, дождь↔заказ).
+
+def sentence_attention(tokens: list[str], focus_idx: int, temperature: float = 1.0):
+    """A very simple attention example on words (for intuition).
+
+    We give every word a small "meaning" vector, and attention shows which words
+    a chosen word looks at. The weights are set up so semantically related words
+    attract each other (food ↔ orders, rain ↔ orders).
     """
-    # игрушечные 3-мерные эмбеддинги: [еда, погода, действие]
+    # toy 3-d embeddings: [food, weather, action]
     vocab = {
-        "дождь":   np.array([0.0, 1.0, 0.1]),
-        "идёт":    np.array([0.0, 0.4, 0.9]),
-        "поэтому": np.array([0.1, 0.2, 0.5]),
-        "заказы":  np.array([0.9, 0.3, 0.6]),
-        "еды":     np.array([1.0, 0.0, 0.1]),
-        "растут":  np.array([0.4, 0.1, 0.9]),
+        "rain":   np.array([0.0, 1.0, 0.1]),
+        "falls":  np.array([0.0, 0.4, 0.9]),
+        "so":     np.array([0.1, 0.2, 0.5]),
+        "food":   np.array([1.0, 0.0, 0.1]),
+        "orders": np.array([0.9, 0.3, 0.6]),
+        "grow":   np.array([0.4, 0.1, 0.9]),
     }
     vecs = np.stack([vocab.get(t, np.array([0.3, 0.3, 0.3])) for t in tokens])
     q = vecs[focus_idx]

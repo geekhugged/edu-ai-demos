@@ -1,9 +1,9 @@
-"""Симуляция многомерных (multivariate) временных рядов с ковариатами.
+"""Simulation of multivariate time series with covariates.
 
-Chronos v2, в отличие от первой версии, умеет учитывать не только сам ряд
-заказов, но и внешние признаки (covariates): погода, промо-акции, выходные.
-Здесь мы генерируем связанные ряды и показываем, как ковариаты «объясняют»
-поведение целевого ряда заказов.
+Unlike the first version, Chronos v2 can account not only for the order series
+itself but also for external features (covariates): weather, promotions,
+weekends. Here we generate related series and show how covariates "explain" the
+behavior of the target order series.
 """
 from __future__ import annotations
 
@@ -18,18 +18,18 @@ def generate_multivariate(
     beta_rain: float = 0.25,
     beta_temp: float = -0.15,
 ) -> pd.DataFrame:
-    """Сгенерировать целевой ряд заказов + три ковариаты.
+    """Generate a target order series + three covariates.
 
-    Ковариаты:
-      * temperature — температура (°C), сезонно-суточная;
-      * rain — интенсивность дождя (0..1), случайные ливни;
-      * promo — флаг промо-акции (0/1), несколько кампаний.
+    Covariates:
+      * temperature — temperature (°C), seasonal-diurnal;
+      * rain — rain intensity (0..1), random showers;
+      * promo — promotion flag (0/1), a few campaigns.
 
-    Целевой ряд строится как базовый суточный профиль, усиленный/ослабленный
-    ковариатами через коэффициенты beta_*. Пользователь в UI может менять
-    beta и видеть, как меняется связь.
+    The target series is built as a base daily profile amplified/dampened by the
+    covariates through the beta_* coefficients. In the UI the user can change the
+    betas and watch how the relationship changes.
     """
-    from .data import daily_profile  # локальный импорт, чтобы избежать циклов
+    from .data import daily_profile  # local import to avoid cycles
 
     rng = np.random.default_rng(seed)
     index = pd.date_range("2025-06-01", periods=days * 24, freq="h")
@@ -37,10 +37,10 @@ def generate_multivariate(
     dow = index.dayofweek.to_numpy()
     doy = index.dayofyear.to_numpy()
 
-    # --- ковариаты ---
+    # --- covariates ---
     temperature = (
         18
-        + 8 * np.sin(2 * np.pi * (hours - 15) / 24)  # днём теплее
+        + 8 * np.sin(2 * np.pi * (hours - 15) / 24)  # warmer during the day
         + 3 * np.sin(2 * np.pi * doy / 365)
         + rng.normal(0, 1.0, len(index))
     )
@@ -60,9 +60,9 @@ def generate_multivariate(
 
     weekend = (dow >= 5).astype(float)
 
-    # --- целевой ряд ---
+    # --- target series ---
     base = daily_profile(hours) * (1.0 + 0.20 * weekend)
-    # нормируем ковариаты к ~[-1..1] для честного влияния beta
+    # normalize covariates to ~[-1..1] for a fair beta influence
     temp_z = (temperature - temperature.mean()) / temperature.std()
 
     signal = base * (
@@ -95,10 +95,10 @@ def reconstruct(
     beta_rain: float,
     beta_temp: float,
 ) -> tuple[np.ndarray, float]:
-    """Простейшая «модель», которая пытается восстановить orders из ковариат.
+    """A minimal "model" that tries to reconstruct orders from the covariates.
 
-    Возвращает восстановленный ряд и WAPE. Показывает: чем больше релевантных
-    ковариат мы включаем, тем ближе восстановление к реальности.
+    Returns the reconstructed series and the WAPE. It shows: the more relevant
+    covariates we include, the closer the reconstruction is to reality.
     """
     from .data import daily_profile
     from .models import wape
@@ -124,6 +124,6 @@ def reconstruct(
 
 
 def correlations(df: pd.DataFrame) -> pd.DataFrame:
-    """Корреляции целевого ряда с ковариатами (для heatmap)."""
+    """Correlations of the target series with the covariates (for the heatmap)."""
     cols = ["orders", "temperature", "rain", "promo", "weekend"]
     return df[cols].corr()
