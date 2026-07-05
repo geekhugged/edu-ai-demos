@@ -22,6 +22,7 @@ st.set_page_config(
 pages = {
     "Demos": [
         st.Page("views/home.py", title="Home", icon="🎓", default=True),
+        st.Page("views/chronos_facts.py", title="Chronos by the numbers", icon="📊"),
         st.Page("views/chronos_v2.py", title="Chronos v2", icon="🍔"),
     ],
     "General reference": [

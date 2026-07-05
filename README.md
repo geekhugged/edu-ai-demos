@@ -37,6 +37,7 @@ edu-ai-demos/
 ├── app.py                     # entrypoint — registers pages via st.navigation
 ├── views/                     # one file per page (plain ASCII filenames)
 │   ├── home.py                # landing page
+│   ├── chronos_facts.py       # "Chronos by the numbers" facts page
 │   ├── chronos_v2.py          # Chronos v2 demo (5 tabs)
 │   ├── transformer.py         # general: Transformer & attention explainer
 │   └── glossary.py            # general: searchable glossary
