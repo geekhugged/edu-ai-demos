@@ -24,13 +24,15 @@ from src import theory
 from src.attention import (
     SENTENCE_TOKENS,
     count_matching_signals,
-    multi_signal_attention,
+    multi_signal_scores,
     run_attention,
     sentence_attention,
+    softmax,
 )
 from src.data import (
     daily_totals,
     generate_food_delivery,
+    holiday_calendar,
     monthly_means,
     one_day,
 )
@@ -420,29 +422,14 @@ with tab_attn:
     st.markdown("#### 🧭 All signals at once — hour + weekday + month + special day")
     st.markdown(
         "A real model doesn't attend along a **single** cycle — it combines them. "
-        "The query below is a whole **moment** (an hour, on a weekday, in a month, "
-        "possibly a holiday). Each candidate past moment is scored by how well it "
-        "matches across **all the signals you enable** — the more it shares, the "
-        "more attention it gets."
+        "Below are **~2 months** of real calendar slots (every hour of every day, "
+        "Nov–Dec, with a few **holidays** marked). The query is a whole **moment**, "
+        "and the heatmap highlights every slot that matches it across **all the "
+        "signals you enable** — so you can see the specific hours and days the "
+        "attention picks out."
     )
 
-    # candidate past moments: (hour, weekday 0=Mon, month 0=Jan, holiday)
-    _cand_raw = [
-        (19, 5, 11, True),   # Sat 19:00 Dec holiday
-        (19, 5, 11, False),  # Sat 19:00 Dec normal
-        (13, 5, 11, False),  # Sat 13:00 Dec normal
-        (20, 6, 11, True),   # Sun 20:00 Dec holiday
-        (19, 4, 10, False),  # Fri 19:00 Nov normal
-        (19, 2, 5, False),   # Wed 19:00 Jun normal
-        (19, 5, 6, True),    # Sat 19:00 Jul holiday
-        (9, 0, 2, False),    # Mon 09:00 Mar normal
-    ]
-    candidates = [
-        {"hour": h, "weekday": wd, "month": mo, "holiday": hol,
-         "label": f"{WEEKDAYS[wd]} {h:02d}:00 · {MONTHS[mo]} · "
-                  f"{'holiday' if hol else 'normal'}"}
-        for (h, wd, mo, hol) in _cand_raw
-    ]
+    cal = holiday_calendar()  # hourly, ~2 months, with a holiday flag
 
     qcol, tcol = st.columns([1, 1])
     with qcol:
@@ -473,38 +460,54 @@ with tab_attn:
     if not features:
         st.warning("Enable at least one signal to see where the attention goes.")
     else:
-        ms_w, _ = multi_signal_attention(query, candidates, features, temperature=ms_temp)
-        order = np.argsort(ms_w)  # ascending → highest ends up on top of an h-bar
-        labels_sorted = [candidates[i]["label"] for i in order]
-        w_sorted = ms_w[order]
+        scores = multi_signal_scores(
+            query, cal["hour"].to_numpy(), cal["weekday"].to_numpy(),
+            cal["month"].to_numpy(), cal["holiday"].to_numpy(), features,
+        )
+        weights = softmax(scores, temperature=ms_temp)
+
+        # reshape to hour (rows) × day (cols) for a horizontal calendar heatmap
+        ndays = len(cal) // 24
+        z = weights.reshape(ndays, 24).T           # (24 hours, ndays days)
+        day_dates = list(cal.index[::24].date)
 
         fig_ms = go.Figure(
-            go.Bar(
-                x=w_sorted * 100, y=labels_sorted, orientation="h",
-                marker=dict(color=w_sorted, colorscale="Blues", cmin=0,
-                            line=dict(width=0), colorbar=dict(title="attention")),
-                hovertemplate="%{y}<br>attention: %{x:.0f}%<extra></extra>",
+            go.Heatmap(
+                z=z, x=day_dates, y=list(range(24)),
+                colorscale="Blues", zmin=0,
+                colorbar=dict(title="attention"),
+                hovertemplate="%{x} · %{y}:00<br>attention: %{z:.3f}<extra></extra>",
             )
         )
-        fig_ms.update_xaxes(title="Attention weight (%)")
-        base_layout(fig_ms, height=360,
+        fig_ms.update_xaxes(title=f"Date — {ndays} days (2 months)")
+        fig_ms.update_yaxes(title="Hour of day", dtick=3)
+        base_layout(fig_ms, height=440,
                     title=f"Attention from query: {q_moment_label}")
         st.plotly_chart(fig_ms, width="stretch")
 
-        top = int(np.argmax(ms_w))
-        shared = count_matching_signals(query, candidates[top], features)
+        top = int(np.argmax(weights))
+        top_ts = cal.index[top]
+        top_moment = {
+            "hour": int(cal["hour"].iloc[top]),
+            "weekday": int(cal["weekday"].iloc[top]),
+            "month": int(cal["month"].iloc[top]),
+            "holiday": bool(cal["holiday"].iloc[top]),
+        }
+        shared = count_matching_signals(query, top_moment, features)
+        n_hol = int(cal["holiday"].to_numpy().reshape(ndays, 24)[:, 0].sum())
         st.success(
-            f"🔦 Most attention (**{ms_w[top]*100:.0f}%**) goes to "
-            f"**{candidates[top]['label']}** — it shares **{shared} of "
-            f"{len(features)}** enabled signals with the query. Turn signals off "
-            f"and on: with fewer signals the attention spreads out; with all of "
-            f"them it locks onto the moment that truly matches."
+            f"🔦 The brightest slots are where the model looks. The single strongest "
+            f"is **{top_ts.strftime('%a %d %b, %H:00')}** — it shares **{shared} of "
+            f"{len(features)}** enabled signals with the query. Turn signals off and "
+            f"on: with fewer signals whole rows/columns light up; with all of them "
+            f"the attention narrows to the exact matching slots."
         )
         st.caption(
-            "This is the whole point of attention in Chronos v2: a moment is "
-            "represented by **many signals at once** (calendar cycles + flags like "
-            "holidays), and the model retrieves the past that matches on as many of "
-            "them as possible."
+            f"Rows = hour of day, columns = the {ndays} days (2 months). "
+            f"{n_hol} days are marked as holidays. This is the whole point of "
+            "attention in Chronos v2: a moment carries **many signals at once** "
+            "(calendar cycles + flags like holidays), and the model retrieves the "
+            "past slots that match on as many of them as possible."
         )
 
     st.divider()

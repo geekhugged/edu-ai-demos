@@ -124,60 +124,41 @@ def sentence_attention(tokens: list[str], focus_idx: int, temperature: float = 1
     return weights
 
 
-# features a moment can carry, for the "all signals at once" example
-MULTI_FEATURES = ("hour", "weekday", "month", "special")
-
-
-def _moment_vec(moment: dict, features: tuple[str, ...]) -> np.ndarray:
-    """Embed a moment using only the enabled features.
-
-    Cyclic features (hour/weekday/month) become unit (sin, cos) vectors, so their
-    dot product is the cosine of the phase gap: +1 when identical, −1 when
-    opposite. The special-day flag becomes ±1, so its product is +1 on a match
-    (both holiday or both normal) and −1 on a mismatch — the same scale.
-    """
-    parts: list[float] = []
-    if "hour" in features:
-        a = 2 * np.pi * moment["hour"] / 24.0
-        parts += [np.sin(a), np.cos(a)]
-    if "weekday" in features:
-        a = 2 * np.pi * moment["weekday"] / 7.0
-        parts += [np.sin(a), np.cos(a)]
-    if "month" in features:
-        a = 2 * np.pi * moment["month"] / 12.0
-        parts += [np.sin(a), np.cos(a)]
-    if "special" in features:
-        parts += [1.0 if moment["holiday"] else -1.0]
-    return np.array(parts, dtype=float)
-
-
-def multi_signal_attention(
-    query: dict,
-    candidates: list[dict],
-    features: tuple[str, ...],
-    temperature: float = 0.3,
-):
-    """Attention over several cyclic signals + a special-day flag at once.
-
-    Each candidate is scored by its average per-feature similarity to the query
-    (in [-1, 1]); softmax turns those into weights. The more signals a candidate
-    shares with the query, the higher its score — so combining signals makes the
-    retrieval more specific.
-
-    Returns (weights, scores). With no features enabled, returns uniform weights.
-    """
-    n = len(candidates)
-    if not features:
-        return np.ones(n) / n, np.zeros(n)
-    q = _moment_vec(query, features)
-    scores = np.array(
-        [(q @ _moment_vec(c, features)) / len(features) for c in candidates]
-    )
-    weights = softmax(scores, temperature=temperature)
-    return weights, scores
-
-
 def count_matching_signals(a: dict, b: dict, features: tuple[str, ...]) -> int:
     """How many of the enabled signals two moments share (exact match)."""
     keys = {"hour": "hour", "weekday": "weekday", "month": "month", "special": "holiday"}
     return sum(1 for f in features if a[keys[f]] == b[keys[f]])
+
+
+def multi_signal_scores(
+    query: dict,
+    hour: np.ndarray,
+    weekday: np.ndarray,
+    month: np.ndarray,
+    holiday: np.ndarray,
+    features: tuple[str, ...],
+) -> np.ndarray:
+    """Vectorised per-moment similarity of many candidate slots to a query.
+
+    Each enabled cyclic signal contributes cos(2π·Δ/period) — i.e. the cosine of
+    the phase gap, +1 when identical — and the special-day flag contributes ±1.
+    The result is averaged over the enabled features, so it stays in [-1, 1]
+    regardless of how many are on. Feed the output to ``softmax`` for weights.
+
+    Works on whole arrays at once (e.g. every hour of a 2-month calendar).
+    """
+    hour = np.asarray(hour, dtype=float)
+    n = len(hour)
+    if not features:
+        return np.zeros(n)
+    score = np.zeros(n)
+    if "hour" in features:
+        score += np.cos(2 * np.pi * (hour - query["hour"]) / 24.0)
+    if "weekday" in features:
+        score += np.cos(2 * np.pi * (np.asarray(weekday) - query["weekday"]) / 7.0)
+    if "month" in features:
+        score += np.cos(2 * np.pi * (np.asarray(month) - query["month"]) / 12.0)
+    if "special" in features:
+        q_h = 1.0 if query["holiday"] else -1.0
+        score += q_h * np.where(np.asarray(holiday), 1.0, -1.0)
+    return score / len(features)

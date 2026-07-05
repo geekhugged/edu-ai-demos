@@ -138,6 +138,34 @@ def monthly_means(df: pd.DataFrame) -> pd.Series:
     return df["orders"].resample("D").sum().resample("MS").mean()
 
 
+def holiday_calendar(
+    start: str = "2025-11-01",
+    days: int = 61,
+    holidays: tuple[str, ...] = ("2025-11-27", "2025-12-20", "2025-12-25", "2025-12-26"),
+) -> pd.DataFrame:
+    """An hourly calendar over ~2 months with a holiday flag.
+
+    Used by the "all signals at once" attention example: every hour of every day
+    is a candidate moment carrying hour / weekday / month / holiday, so the demo
+    can highlight the specific slots that match a query moment.
+
+    Default window Nov–Dec 2025 with a few marked holidays (one of them, Dec 20,
+    is a Saturday — so a "Saturday · December · holiday" query has an exact hit).
+    """
+    idx = pd.date_range(start, periods=days * 24, freq="h")
+    hol = {pd.Timestamp(d).date() for d in holidays}
+    is_hol = np.array([d in hol for d in idx.date])
+    return pd.DataFrame(
+        {
+            "hour": idx.hour,
+            "weekday": idx.dayofweek,   # 0=Mon
+            "month": idx.month - 1,     # 0=Jan
+            "holiday": is_hol,
+        },
+        index=idx,
+    )
+
+
 def one_day(df: pd.DataFrame, date: str | None = None) -> pd.DataFrame:
     """Slice out a single day (a typical Saturday by default) to show the two peaks."""
     if date is None:
