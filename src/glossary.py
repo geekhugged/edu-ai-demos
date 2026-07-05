@@ -182,6 +182,28 @@ GLOSSARY: list[tuple[str, str, str]] = [
 ]
 
 
+# Terms that are NOT part of AWS Chronos-2 — they belong to the original Chronos
+# v1 / Chronos-Bolt, or are otherwise unused by the encoder-only, direct-quantile
+# v2 model. Everything else in the glossary applies to Chronos-2.
+_NOT_CHRONOS2: frozenset[str] = frozenset({
+    "Decoder",                     # v2 is encoder-only
+    "Cross-attention",             # an encoder-decoder feature
+    "Autoregressive",              # v1 decoding
+    "Tokenization (time series)",  # v1 (v2 reads raw patches)
+    "Quantization / bins",         # v1
+    "Cross-entropy loss",          # v1 token classification (v2 uses quantile loss)
+    "Temperature (sampling)",      # v1 autoregressive sampling knob
+    "top-k / top-p (nucleus)",     # v1 sampling knob
+    "Chronos (v1)",                # a different model
+    "Chronos-Bolt",                # a different model
+})
+
+
+def applies_to_chronos2(term: str) -> bool:
+    """Whether a glossary term is applicable to AWS Chronos-2."""
+    return term not in _NOT_CHRONOS2
+
+
 def categories() -> list[str]:
     """Category names in first-seen order."""
     seen: list[str] = []
