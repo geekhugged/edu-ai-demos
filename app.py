@@ -19,9 +19,15 @@ st.set_page_config(
 
 # Registered pages. Titles/icons are set here explicitly (not derived from the
 # filename), so filenames stay plain ASCII and portable across environments.
-pages = [
-    st.Page("views/home.py", title="Home", icon="🎓", default=True),
-    st.Page("views/chronos_v2.py", title="Chronos v2", icon="🍔"),
-]
+pages = {
+    "Demos": [
+        st.Page("views/home.py", title="Home", icon="🎓", default=True),
+        st.Page("views/chronos_v2.py", title="Chronos v2", icon="🍔"),
+    ],
+    "General reference": [
+        st.Page("views/transformer.py", title="Transformer & attention", icon="🧠"),
+        st.Page("views/glossary.py", title="Glossary", icon="📖"),
+    ],
+}
 
 st.navigation(pages).run()

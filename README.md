@@ -37,13 +37,17 @@ edu-ai-demos/
 ├── app.py                     # entrypoint — registers pages via st.navigation
 ├── views/                     # one file per page (plain ASCII filenames)
 │   ├── home.py                # landing page
-│   └── chronos_v2.py          # Chronos v2 demo (5 tabs)
+│   ├── chronos_v2.py          # Chronos v2 demo (5 tabs)
+│   ├── transformer.py         # general: Transformer & attention explainer
+│   └── glossary.py            # general: searchable glossary
 ├── src/                       # all logic, no Streamlit (easy to test)
 │   ├── data.py                # synthetic food-delivery data generation
 │   ├── models.py              # zero-shot / fine-tuned + the WAPE metric
 │   ├── attention.py           # attention-mechanism simulation
 │   ├── multivariate.py        # multivariate series and covariates
-│   ├── theory.py              # theory text (3 levels)
+│   ├── theory.py              # Chronos theory text (3 levels + deep dive)
+│   ├── general_theory.py      # general transformer/attention explainers
+│   ├── glossary.py            # glossary terms (data)
 │   └── viz.py                 # shared palette and chart style
 ├── .streamlit/config.toml     # theme
 └── requirements.txt

@@ -323,6 +323,26 @@ with tab_attn:
         "is a live simulation."
     )
 
+    with st.expander("👥 What Chronos-2 actually uses: **two** kinds of attention"):
+        st.markdown(
+            """
+Chronos-2 stacks **two** attention mechanisms — worth knowing before the demo:
+
+- **Time attention** — self-attention *along time*, across the patches of one
+  series. *"What in this series' past is relevant to its future?"* — this is the
+  look-back the simulations below visualise.
+- **Group attention** — attention *across a group* of related series and
+  **covariates** (promo, rain, temperature, holiday) at each moment. *"How do the
+  other channels move this target right now?"* It's what lets Chronos-2 learn,
+  **in context and without retraining**, that a holiday lifts demand or rain
+  nudges it up — exactly what the **🧩 Multivariate series** tab simulates.
+
+> **Intuition:** time attention looks *back*; group attention looks *sideways* at
+> the other signals happening at the same time. (Full write-up on the
+> **🧠 Transformer & attention** reference page.)
+"""
+        )
+
     st.markdown("#### 🎯 Attention on a time series")
     st.markdown(
         "Real series have **several cycles at once**. The model can attend along "
