@@ -85,8 +85,8 @@ with tab_data:
     st.subheader("📈 Synthetic food-delivery demand over two years")
     st.markdown(
         "The data is hourly and spans **two years**. Within **each day** there "
-        "are two hills: a lunch peak around **11:30** (smaller) and a dinner peak "
-        "around **18:30** (larger). Plus weekly seasonality (weekends are busier), "
+        "are two hills: a lunch peak around **12:00** (smaller) and a dinner peak "
+        "around **19:00** (larger). Plus weekly seasonality (weekends are busier), "
         "yearly seasonality, and business growth over the two years."
     )
 
@@ -115,9 +115,9 @@ with tab_data:
             fill="tozeroy", fillcolor="rgba(76,125,240,0.12)",
         )
     )
-    fig.add_vrect(x0=10.5, x1=13, fillcolor=COLORS["lunch"], opacity=0.10, line_width=0,
+    fig.add_vrect(x0=11, x1=13, fillcolor=COLORS["lunch"], opacity=0.10, line_width=0,
                   annotation_text="🍝 Lunch", annotation_position="top left")
-    fig.add_vrect(x0=17.5, x1=20, fillcolor=COLORS["dinner"], opacity=0.10, line_width=0,
+    fig.add_vrect(x0=18, x1=20, fillcolor=COLORS["dinner"], opacity=0.10, line_width=0,
                   annotation_text="🍕 Dinner", annotation_position="top right")
     fig.update_xaxes(title="Hour of day", dtick=2)
     fig.update_yaxes(title="Orders per hour")
@@ -321,6 +321,7 @@ with tab_attn:
         unit = "orders/hour"
         query_prompt = "Which hour are we forecasting? (query)"
         neighbor_note = "the model treats **23:00** and **00:00** as neighbors"
+        dist_note = "note the two daily peaks — lunch ~12:00 and dinner ~19:00"
     elif granularity.startswith("📅"):
         mode = "sequence"
         period = 7
@@ -334,6 +335,7 @@ with tab_attn:
         unit = "orders/day"
         query_prompt = "Which weekday are we forecasting? (query)"
         neighbor_note = "the model treats **Sunday** and **Monday** as neighbors"
+        dist_note = "weekends run higher than weekdays"
     else:
         mode = "sequence"
         period = 12
@@ -347,6 +349,7 @@ with tab_attn:
         unit = "orders/day"
         query_prompt = "Which month are we forecasting? (query)"
         neighbor_note = "the model treats **December** and **January** as neighbors"
+        dist_note = "note the yearly seasonality (winter is busier)"
 
     colA, colB = st.columns([1, 2])
     with colA:
@@ -378,28 +381,39 @@ with tab_attn:
                          period=period, temperature=temp)
 
     with colB:
+        # Bar HEIGHT = the actual orders in each slot (so the real distribution,
+        # e.g. the two daily peaks, is visible). Bar COLOR = attention weight
+        # (darker = the model looks there more). The forecast is the
+        # attention-weighted average of these order levels.
         fig_a = go.Figure()
         fig_a.add_trace(
             go.Bar(
-                x=key_labels, y=attn.weights,
-                marker=dict(color=attn.weights, colorscale="Blues", line=dict(width=0)),
-                name="Attention weight",
+                x=key_labels, y=attn.key_values,
+                marker=dict(
+                    color=attn.weights, colorscale="Blues",
+                    cmin=0, line=dict(width=0),
+                    colorbar=dict(title="attention"),
+                ),
+                customdata=np.round(attn.weights * 100, 1),
+                hovertemplate="%{x}<br>orders: %{y:.0f}<br>attention: %{customdata}%<extra></extra>",
+                name="Orders",
             )
         )
         if mode == "cycle":
             fig_a.add_vline(x=q_pos, line=dict(color=COLORS["dinner"], width=2, dash="dash"),
                             annotation_text="query", annotation_position="top")
         fig_a.update_xaxes(title=x_title)
-        fig_a.update_yaxes(title="Attention weight (sums to 1)")
-        base_layout(fig_a, height=340, title="Where the model 'looks'")
+        fig_a.update_yaxes(title=unit.replace("/", " per ").capitalize())
+        base_layout(fig_a, height=360, title="Order distribution, coloured by attention")
         st.plotly_chart(fig_a, width="stretch")
 
     top_idx = int(np.argmax(attn.weights))
     st.success(
-        f"🔦 Most of the attention (**{attn.weights[top_idx]*100:.0f}%**) goes to "
-        f"**{key_labels[top_idx]}** — closest in meaning to the query "
-        f"**{q_label}**. Forecast = weighted sum ≈ **{attn.prediction:.0f}** "
-        f"{unit}."
+        f"🔦 Bar height shows the **order distribution** ({dist_note}); colour "
+        f"shows **attention**. Most attention (**{attn.weights[top_idx]*100:.0f}%**) "
+        f"goes to **{key_labels[top_idx]}** — closest in meaning to the query "
+        f"**{q_label}**. Forecast = attention-weighted average ≈ "
+        f"**{attn.prediction:.0f}** {unit}."
     )
     st.caption(
         f"Notice: {neighbor_note} — because the position is encoded on a circle "
