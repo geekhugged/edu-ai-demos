@@ -23,7 +23,6 @@ if str(ROOT) not in sys.path:
 from src import theory
 from src.attention import SENTENCE_TOKENS, run_attention, sentence_attention
 from src.data import (
-    daily_profile,
     daily_totals,
     generate_food_delivery,
     monthly_means,
@@ -300,35 +299,35 @@ with tab_attn:
         horizontal=True,
     )
 
-    # Two rendering modes:
-    #   * "cycle"    — keys are one full cycle (24 hours of a typical day);
-    #   * "sequence" — keys are a real run of history (many days / months), each
-    #                  sitting at its own position in the cycle. Attention then
-    #                  lights up every past slot that shares the query's phase
-    #                  (e.g. every past Saturday, every past December).
+    # Every granularity is a "sequence": the keys are a real run of history, each
+    # key sitting at its own position in the cycle. Attention lights up every past
+    # slot that shares the query's phase (same hour of day, same weekday, same
+    # month), so the same-phase slots across the whole window get the weight.
+    hours_hist = 72        # hour-level: show 3 days of hourly data
     cycle_hist_days = 14   # day-level: show at least 2 weeks
     month_hist = 18        # month-level: show 1.5 years
 
     if granularity.startswith("🕐"):
-        mode = "cycle"
         period = 24
-        key_positions = np.arange(24)
-        key_values = daily_profile(key_positions)
-        key_labels = [f"{h:02d}:00" for h in key_positions]
-        cycle_labels = key_labels
+        seq = df["orders"].iloc[-hours_hist:]
+        key_positions = seq.index.hour.to_numpy()
+        key_values = seq.to_numpy()
+        key_labels = [t.strftime("%a %H:00") for t in seq.index]
+        key_x = list(seq.index)  # real timestamps → clean hourly time axis
+        cycle_labels = [f"{h:02d}:00" for h in range(24)]
         default_cycle = 19
-        x_title = "Hour of day (keys from the past)"
+        x_title = f"Time (last {hours_hist} hours ≈ {hours_hist // 24} days)"
         unit = "orders/hour"
         query_prompt = "Which hour are we forecasting? (query)"
         neighbor_note = "the model treats **23:00** and **00:00** as neighbors"
-        dist_note = "note the two daily peaks — lunch ~12:00 and dinner ~19:00"
+        dist_note = "the two daily peaks repeat across the 3 days"
     elif granularity.startswith("📅"):
-        mode = "sequence"
         period = 7
         seq = daily_totals(df).iloc[-cycle_hist_days:]
         key_positions = seq.index.dayofweek.to_numpy()
         key_values = seq.to_numpy()
         key_labels = [d.strftime("%a %d %b") for d in seq.index]
+        key_x = key_labels
         cycle_labels = WEEKDAYS
         default_cycle = 5  # Saturday
         x_title = f"Day (last {cycle_hist_days} days ≈ {cycle_hist_days // 7} weeks)"
@@ -337,12 +336,12 @@ with tab_attn:
         neighbor_note = "the model treats **Sunday** and **Monday** as neighbors"
         dist_note = "weekends run higher than weekdays"
     else:
-        mode = "sequence"
         period = 12
         seq = monthly_means(df).iloc[-month_hist:]
         key_positions = seq.index.month.to_numpy() - 1
         key_values = seq.to_numpy()
         key_labels = [d.strftime("%b %Y") for d in seq.index]
+        key_x = key_labels
         cycle_labels = MONTHS
         default_cycle = 11  # December
         x_title = f"Month (last {month_hist} months ≈ {month_hist / 12:.1f} years)"
@@ -353,9 +352,9 @@ with tab_attn:
 
     colA, colB = st.columns([1, 2])
     with colA:
-        # The query is always a position in the CYCLE (hour / weekday / month),
-        # chosen from the cycle labels. Options are label strings with a distinct
-        # key per granularity so a stale value can't leak across option sets.
+        # The query is a position in the CYCLE (hour / weekday / month), chosen
+        # from the cycle labels. Options are label strings with a distinct key per
+        # granularity so a stale value can't leak across option sets.
         q_label = st.select_slider(
             query_prompt, options=cycle_labels, value=cycle_labels[default_cycle],
             key=f"attn_query_p{period}",
@@ -364,18 +363,11 @@ with tab_attn:
         temp = st.slider("Attention sharpness (temperature)", 0.2, 3.0, 1.0, 0.1,
                          help="Lower — sharper attention (focus on one slot). "
                               "Higher — more diffuse (look at everything a little).")
-        if mode == "cycle":
-            st.caption(
-                "The query is the slot we want to predict. The keys are past slots "
-                "of the same cycle. The model computes similarity and hands out "
-                "**attention weights**."
-            )
-        else:
-            st.caption(
-                "The keys are the **actual past days/months**. Every past slot that "
-                "shares the query's phase (same weekday / same month) lights up — "
-                "that's where the attention flows."
-            )
+        st.caption(
+            "The keys are the **actual past hours/days/months**. Every past slot "
+            "that shares the query's phase (same hour / weekday / month) lights "
+            "up — that's where the attention flows."
+        )
 
     attn = run_attention(key_positions, key_values, query_position=q_pos,
                          period=period, temperature=temp)
@@ -388,7 +380,7 @@ with tab_attn:
         fig_a = go.Figure()
         fig_a.add_trace(
             go.Bar(
-                x=key_labels, y=attn.key_values,
+                x=key_x, y=attn.key_values,
                 marker=dict(
                     color=attn.weights, colorscale="Blues",
                     cmin=0, line=dict(width=0),
@@ -399,9 +391,6 @@ with tab_attn:
                 name="Orders",
             )
         )
-        if mode == "cycle":
-            fig_a.add_vline(x=q_pos, line=dict(color=COLORS["dinner"], width=2, dash="dash"),
-                            annotation_text="query", annotation_position="top")
         fig_a.update_xaxes(title=x_title)
         fig_a.update_yaxes(title=unit.replace("/", " per ").capitalize())
         base_layout(fig_a, height=360, title="Order distribution, coloured by attention")
