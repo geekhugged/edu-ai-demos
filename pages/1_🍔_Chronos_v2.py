@@ -46,8 +46,10 @@ def _data(seed: int, noise: float) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def _mv(seed: int, bp: float, br: float, bt: float) -> pd.DataFrame:
-    return generate_multivariate(seed=seed, beta_promo=bp, beta_rain=br, beta_temp=bt)
+def _mv(seed: int, bp: float, br: float, bt: float, bh: float) -> pd.DataFrame:
+    return generate_multivariate(
+        seed=seed, beta_promo=bp, beta_rain=br, beta_temp=bt, beta_holiday=bh
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -82,7 +84,7 @@ with tab_data:
     st.subheader("📈 Synthetic food-delivery demand over a year")
     st.markdown(
         "The data is hourly. Within **each day** there are two hills: a lunch "
-        "peak around **13:00** (smaller) and a dinner peak around **19:30** "
+        "peak around **11:30** (smaller) and a dinner peak around **18:30** "
         "(larger). Plus weekly seasonality (weekends are busier) and yearly "
         "business growth."
     )
@@ -111,9 +113,9 @@ with tab_data:
             fill="tozeroy", fillcolor="rgba(76,125,240,0.12)",
         )
     )
-    fig.add_vrect(x0=12, x1=14, fillcolor=COLORS["lunch"], opacity=0.10, line_width=0,
+    fig.add_vrect(x0=10.5, x1=13, fillcolor=COLORS["lunch"], opacity=0.10, line_width=0,
                   annotation_text="🍝 Lunch", annotation_position="top left")
-    fig.add_vrect(x0=18.5, x1=21, fillcolor=COLORS["dinner"], opacity=0.10, line_width=0,
+    fig.add_vrect(x0=17.5, x1=20, fillcolor=COLORS["dinner"], opacity=0.10, line_width=0,
                   annotation_text="🍕 Dinner", annotation_position="top right")
     fig.update_xaxes(title="Hour of day", dtick=2)
     fig.update_yaxes(title="Orders per hour")
@@ -404,18 +406,20 @@ with tab_mv:
     st.subheader("🧩 Multivariate series and covariates")
     st.markdown(
         "Chronos v2 can account not only for the order series itself but also "
-        "for **external features** (covariates): weather, rain, promotions. "
-        "Below is a simulation: switch covariates on and watch the "
-        "reconstruction of the series improve."
+        "for **external features** (covariates): weather, rain, promotions, and "
+        "**special days / public holidays**. Below is a simulation: switch "
+        "covariates on and watch the reconstruction of the series improve."
     )
 
     st.markdown("#### 🎛️ Strength of covariate influence")
-    cc1, cc2, cc3 = st.columns(3)
+    cc1, cc2, cc3, cc4 = st.columns(4)
     bp = cc1.slider("Promotion ↑", 0.0, 0.8, 0.35, 0.05)
     br = cc2.slider("Rain ↑", 0.0, 0.6, 0.25, 0.05)
     bt = cc3.slider("Temperature (↑ temp → ↓ orders)", -0.4, 0.0, -0.15, 0.05)
+    bh = cc4.slider("Holiday ↑", 0.0, 1.0, 0.55, 0.05,
+                    help="Public holidays cause a strong demand spike.")
 
-    mv = _mv(seed, bp, br, bt)
+    mv = _mv(seed, bp, br, bt, bh)
 
     # multi-panel chart: target series + covariates
     st.markdown("#### 📊 The target series and its covariates")
@@ -424,44 +428,49 @@ with tab_mv:
         ("temperature", "Temperature, °C", CATEGORICAL[1]),
         ("rain", "Rain (0..1)", CATEGORICAL[2]),
         ("promo", "Promo (0/1)", CATEGORICAL[3]),
+        ("holiday", "Holiday (0/1)", CATEGORICAL[4]),
     ]
     from plotly.subplots import make_subplots
 
     fig_mv = make_subplots(
-        rows=len(series_cfg), cols=1, shared_xaxes=True, vertical_spacing=0.04,
+        rows=len(series_cfg), cols=1, shared_xaxes=True, vertical_spacing=0.035,
         subplot_titles=[c[1] for c in series_cfg],
     )
     for i, (col, _label, color) in enumerate(series_cfg, start=1):
-        fill = "tozeroy" if col in ("rain", "promo") else None
+        fill = "tozeroy" if col in ("rain", "promo", "holiday") else None
         fig_mv.add_trace(
             go.Scatter(x=mv.index, y=mv[col], mode="lines",
                        line=dict(color=color, width=1.6), fill=fill,
                        name=_label, showlegend=False),
             row=i, col=1,
         )
-    fig_mv.update_layout(height=520, template="plotly_white",
+    fig_mv.update_layout(height=600, template="plotly_white",
                          margin=dict(l=10, r=10, t=30, b=10),
                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     fig_mv.update_xaxes(showgrid=True, gridcolor=COLORS["grid"])
     fig_mv.update_yaxes(showgrid=True, gridcolor=COLORS["grid"])
     st.plotly_chart(fig_mv, width="stretch")
     st.caption(
-        "Look closely: order spikes line up with promo days and rainy hours. "
-        "The model can use these signals for the forecast."
+        "Look closely: order spikes line up with promo days, rainy hours, and "
+        "especially the **holidays** (the tallest spikes). The model can use "
+        "these signals for the forecast."
     )
 
     st.markdown("#### 🧪 What accounting for covariates gives you")
     st.markdown(
         "Let's turn on a 'model' that tries to reconstruct the orders. Add "
-        "covariates one by one and watch the **WAPE**."
+        "covariates one by one and watch the **WAPE**. The **holiday** flag "
+        "usually helps the most — those spikes are otherwise impossible to guess."
     )
-    u1, u2, u3 = st.columns(3)
+    u1, u2, u3, u4 = st.columns(4)
     use_promo = u1.checkbox("Use promo", value=True)
     use_rain = u2.checkbox("Use rain", value=True)
     use_temp = u3.checkbox("Use temperature", value=False)
+    use_holiday = u4.checkbox("Use holiday", value=True)
 
-    recon, w_full = reconstruct(mv, use_promo, use_rain, use_temp, bp, br, bt)
-    _, w_none = reconstruct(mv, False, False, False, bp, br, bt)
+    recon, w_full = reconstruct(mv, use_promo, use_rain, use_temp, use_holiday,
+                                bp, br, bt, bh)
+    _, w_none = reconstruct(mv, False, False, False, False, bp, br, bt, bh)
 
     k1, k2 = st.columns(2)
     k1.metric("WAPE without covariates", f"{w_none:.1f}%")
@@ -483,7 +492,7 @@ with tab_mv:
 
     st.markdown("#### 🔥 Correlations between the series")
     corr = correlations(mv)
-    labels = ["Orders", "Temp.", "Rain", "Promo", "Weekend"]
+    labels = ["Orders", "Temp.", "Rain", "Promo", "Holiday", "Weekend"]
     fig_c = go.Figure(
         go.Heatmap(
             z=corr.values, x=labels, y=labels, colorscale="RdBu", zmid=0,
@@ -494,8 +503,8 @@ with tab_mv:
     base_layout(fig_c, height=380)
     st.plotly_chart(fig_c, width="stretch")
     st.info(
-        "💡 Orders correlate positively with **promo** and **rain**, and "
-        "negatively with **temperature** (people order less in the heat). These "
-        "are exactly the links a multivariate model captures through attention "
-        "*between* series."
+        "💡 Orders correlate positively with **holiday**, **promo**, and "
+        "**rain**, and negatively with **temperature** (people order less in the "
+        "heat). These are exactly the links a multivariate model captures "
+        "through attention *between* series."
     )

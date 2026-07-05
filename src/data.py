@@ -24,8 +24,8 @@ def daily_profile(hours: np.ndarray) -> np.ndarray:
 
     Returns the average order level for each hour [0..23].
     """
-    lunch = _gaussian_peak(hours, center=13.0, width=1.1, height=45.0)   # lunch — smaller hill
-    dinner = _gaussian_peak(hours, center=19.5, width=1.6, height=75.0)  # dinner — larger hill
+    lunch = _gaussian_peak(hours, center=11.5, width=1.1, height=45.0)   # lunch — smaller hill (~11-12)
+    dinner = _gaussian_peak(hours, center=18.5, width=1.6, height=75.0)  # dinner — larger hill (~18-19)
     # small night/morning baseline so the line doesn't drop to zero
     base = 6.0 + 3.0 * np.exp(-0.5 * ((hours - 22.0) / 3.0) ** 2)
     return lunch + dinner + base
