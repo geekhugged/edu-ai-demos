@@ -21,7 +21,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src import theory
-from src.attention import SENTENCE_TOKENS, run_attention, sentence_attention
+from src.attention import (
+    SENTENCE_TOKENS,
+    count_matching_signals,
+    multi_signal_attention,
+    run_attention,
+    sentence_attention,
+)
 from src.data import (
     daily_totals,
     generate_food_delivery,
@@ -408,6 +414,98 @@ with tab_attn:
         f"Notice: {neighbor_note} — because the position is encoded on a circle "
         "(sin/cos), not as a plain number. So the ends of the cycle stay close."
     )
+
+    # ── all signals at once ────────────────────────────────────────────────
+    st.divider()
+    st.markdown("#### 🧭 All signals at once — hour + weekday + month + special day")
+    st.markdown(
+        "A real model doesn't attend along a **single** cycle — it combines them. "
+        "The query below is a whole **moment** (an hour, on a weekday, in a month, "
+        "possibly a holiday). Each candidate past moment is scored by how well it "
+        "matches across **all the signals you enable** — the more it shares, the "
+        "more attention it gets."
+    )
+
+    # candidate past moments: (hour, weekday 0=Mon, month 0=Jan, holiday)
+    _cand_raw = [
+        (19, 5, 11, True),   # Sat 19:00 Dec holiday
+        (19, 5, 11, False),  # Sat 19:00 Dec normal
+        (13, 5, 11, False),  # Sat 13:00 Dec normal
+        (20, 6, 11, True),   # Sun 20:00 Dec holiday
+        (19, 4, 10, False),  # Fri 19:00 Nov normal
+        (19, 2, 5, False),   # Wed 19:00 Jun normal
+        (19, 5, 6, True),    # Sat 19:00 Jul holiday
+        (9, 0, 2, False),    # Mon 09:00 Mar normal
+    ]
+    candidates = [
+        {"hour": h, "weekday": wd, "month": mo, "holiday": hol,
+         "label": f"{WEEKDAYS[wd]} {h:02d}:00 · {MONTHS[mo]} · "
+                  f"{'holiday' if hol else 'normal'}"}
+        for (h, wd, mo, hol) in _cand_raw
+    ]
+
+    qcol, tcol = st.columns([1, 1])
+    with qcol:
+        st.markdown("**Query moment**")
+        mq_hour = st.slider("Hour", 0, 23, 19, key="ms_hour")
+        mq_wd = st.select_slider("Weekday", options=list(range(7)), value=5,
+                                 format_func=lambda i: WEEKDAYS[i], key="ms_wd")
+        mq_mo = st.select_slider("Month", options=list(range(12)), value=11,
+                                 format_func=lambda i: MONTHS[i], key="ms_mo")
+        mq_hol = st.checkbox("Special day (holiday)", value=True, key="ms_hol")
+    with tcol:
+        st.markdown("**Signals attention may use**")
+        f_hour = st.checkbox("Hour of day", value=True, key="ms_f_hour")
+        f_wd = st.checkbox("Day of week", value=True, key="ms_f_wd")
+        f_mo = st.checkbox("Month of year", value=True, key="ms_f_mo")
+        f_sp = st.checkbox("Special / non-special day", value=True, key="ms_f_sp")
+        ms_temp = st.slider("Sharpness (temperature)", 0.1, 1.0, 0.3, 0.05,
+                            key="ms_temp")
+
+    features = tuple(
+        f for f, on in [("hour", f_hour), ("weekday", f_wd),
+                        ("month", f_mo), ("special", f_sp)] if on
+    )
+    query = {"hour": mq_hour, "weekday": mq_wd, "month": mq_mo, "holiday": mq_hol}
+    q_moment_label = (f"{WEEKDAYS[mq_wd]} {mq_hour:02d}:00 · {MONTHS[mq_mo]} · "
+                      f"{'holiday' if mq_hol else 'normal'}")
+
+    if not features:
+        st.warning("Enable at least one signal to see where the attention goes.")
+    else:
+        ms_w, _ = multi_signal_attention(query, candidates, features, temperature=ms_temp)
+        order = np.argsort(ms_w)  # ascending → highest ends up on top of an h-bar
+        labels_sorted = [candidates[i]["label"] for i in order]
+        w_sorted = ms_w[order]
+
+        fig_ms = go.Figure(
+            go.Bar(
+                x=w_sorted * 100, y=labels_sorted, orientation="h",
+                marker=dict(color=w_sorted, colorscale="Blues", cmin=0,
+                            line=dict(width=0), colorbar=dict(title="attention")),
+                hovertemplate="%{y}<br>attention: %{x:.0f}%<extra></extra>",
+            )
+        )
+        fig_ms.update_xaxes(title="Attention weight (%)")
+        base_layout(fig_ms, height=360,
+                    title=f"Attention from query: {q_moment_label}")
+        st.plotly_chart(fig_ms, width="stretch")
+
+        top = int(np.argmax(ms_w))
+        shared = count_matching_signals(query, candidates[top], features)
+        st.success(
+            f"🔦 Most attention (**{ms_w[top]*100:.0f}%**) goes to "
+            f"**{candidates[top]['label']}** — it shares **{shared} of "
+            f"{len(features)}** enabled signals with the query. Turn signals off "
+            f"and on: with fewer signals the attention spreads out; with all of "
+            f"them it locks onto the moment that truly matches."
+        )
+        st.caption(
+            "This is the whole point of attention in Chronos v2: a moment is "
+            "represented by **many signals at once** (calendar cycles + flags like "
+            "holidays), and the model retrieves the past that matches on as many of "
+            "them as possible."
+        )
 
     st.divider()
     st.markdown("#### 💬 The same thing, but on words")
