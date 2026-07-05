@@ -423,23 +423,26 @@ with tab_attn:
     st.markdown(
         "A real model doesn't attend along a **single** cycle — it combines them. "
         "Below are **~2 months** of real calendar slots (every hour of every day, "
-        "Nov–Dec, with a few **holidays** marked). The query is a whole **moment**, "
-        "and the heatmap highlights every slot that matches it across **all the "
-        "signals you enable** — so you can see the specific hours and days the "
-        "attention picks out."
+        "Nov–Dec, with a few **holidays** marked). **Pick the day and hour you want "
+        "to predict** — it's highlighted with the amber line — and the heatmap shows "
+        "where its attention flows: every *other* slot that matches it across the "
+        "signals you enable lights up."
     )
 
     cal = holiday_calendar()  # hourly, ~2 months, with a holiday flag
+    ndays = len(cal) // 24
+    day_dates = list(cal.index[::24].date)
+    _default_day = pd.Timestamp("2025-12-20").date()
+    default_day_idx = day_dates.index(_default_day) if _default_day in day_dates else ndays // 2
 
     qcol, tcol = st.columns([1, 1])
     with qcol:
-        st.markdown("**Query moment**")
-        mq_hour = st.slider("Hour", 0, 23, 19, key="ms_hour")
-        mq_wd = st.select_slider("Weekday", options=list(range(7)), value=5,
-                                 format_func=lambda i: WEEKDAYS[i], key="ms_wd")
-        mq_mo = st.select_slider("Month", options=list(range(12)), value=11,
-                                 format_func=lambda i: MONTHS[i], key="ms_mo")
-        mq_hol = st.checkbox("Special day (holiday)", value=True, key="ms_hol")
+        st.markdown("**Day we are predicting**")
+        q_date = st.select_slider(
+            "Target day", options=day_dates, value=day_dates[default_day_idx],
+            format_func=lambda d: d.strftime("%a %d %b"), key="ms_date",
+        )
+        mq_hour = st.slider("Target hour", 0, 23, 19, key="ms_hour")
     with tcol:
         st.markdown("**Signals attention may use**")
         f_hour = st.checkbox("Hour of day", value=True, key="ms_f_hour")
@@ -453,9 +456,16 @@ with tab_attn:
         f for f, on in [("hour", f_hour), ("weekday", f_wd),
                         ("month", f_mo), ("special", f_sp)] if on
     )
-    query = {"hour": mq_hour, "weekday": mq_wd, "month": mq_mo, "holiday": mq_hol}
-    q_moment_label = (f"{WEEKDAYS[mq_wd]} {mq_hour:02d}:00 · {MONTHS[mq_mo]} · "
-                      f"{'holiday' if mq_hol else 'normal'}")
+
+    # derive the query moment from the chosen day (weekday / month / holiday are
+    # properties of the date itself, so the user only picks a day + hour)
+    day_mask = cal.index.date == q_date
+    q_row = cal[day_mask].iloc[0]
+    query = {"hour": mq_hour, "weekday": int(q_row["weekday"]),
+             "month": int(q_row["month"]), "holiday": bool(q_row["holiday"])}
+    q_ts = pd.Timestamp(q_date)
+    q_label = (f"{q_date.strftime('%a %d %b')} {mq_hour:02d}:00"
+               f"{' · holiday' if query['holiday'] else ''}")
 
     if not features:
         st.warning("Enable at least one signal to see where the attention goes.")
@@ -464,12 +474,12 @@ with tab_attn:
             query, cal["hour"].to_numpy(), cal["weekday"].to_numpy(),
             cal["month"].to_numpy(), cal["holiday"].to_numpy(), features,
         )
+        # you can't attend to the day you're predicting — mask it out
+        scores = np.where(day_mask, -np.inf, scores)
         weights = softmax(scores, temperature=ms_temp)
 
         # reshape to hour (rows) × day (cols) for a horizontal calendar heatmap
-        ndays = len(cal) // 24
         z = weights.reshape(ndays, 24).T           # (24 hours, ndays days)
-        day_dates = list(cal.index[::24].date)
 
         fig_ms = go.Figure(
             go.Heatmap(
@@ -479,10 +489,18 @@ with tab_attn:
                 hovertemplate="%{x} · %{y}:00<br>attention: %{z:.3f}<extra></extra>",
             )
         )
+        # highlight the day we're predicting + pinpoint the exact target slot
+        fig_ms.add_vline(x=q_ts, line=dict(color=COLORS["zero_shot"], width=2),
+                         annotation_text="◀ predicting", annotation_position="top")
+        fig_ms.add_trace(go.Scatter(
+            x=[q_ts], y=[mq_hour], mode="markers", name="target slot",
+            marker=dict(symbol="star", size=14, color=COLORS["zero_shot"],
+                        line=dict(color="white", width=1)),
+            hovertemplate=f"predicting {q_label}<extra></extra>", showlegend=False,
+        ))
         fig_ms.update_xaxes(title=f"Date — {ndays} days (2 months)")
         fig_ms.update_yaxes(title="Hour of day", dtick=3)
-        base_layout(fig_ms, height=440,
-                    title=f"Attention from query: {q_moment_label}")
+        base_layout(fig_ms, height=440, title=f"Predicting {q_label} — where it attends")
         st.plotly_chart(fig_ms, width="stretch")
 
         top = int(np.argmax(weights))
@@ -494,20 +512,20 @@ with tab_attn:
             "holiday": bool(cal["holiday"].iloc[top]),
         }
         shared = count_matching_signals(query, top_moment, features)
-        n_hol = int(cal["holiday"].to_numpy().reshape(ndays, 24)[:, 0].sum())
         st.success(
-            f"🔦 The brightest slots are where the model looks. The single strongest "
-            f"is **{top_ts.strftime('%a %d %b, %H:00')}** — it shares **{shared} of "
-            f"{len(features)}** enabled signals with the query. Turn signals off and "
-            f"on: with fewer signals whole rows/columns light up; with all of them "
-            f"the attention narrows to the exact matching slots."
+            f"🔦 To predict **{q_label}** (amber ⭐), the model looks back at the "
+            f"brightest slots. The strongest is **{top_ts.strftime('%a %d %b, %H:00')}** "
+            f"— it shares **{shared} of {len(features)}** enabled signals with the "
+            f"target. Turn signals off and on: with fewer signals whole rows/columns "
+            f"light up; with all of them the attention narrows to the closest matches."
         )
         st.caption(
-            f"Rows = hour of day, columns = the {ndays} days (2 months). "
-            f"{n_hol} days are marked as holidays. This is the whole point of "
-            "attention in Chronos v2: a moment carries **many signals at once** "
-            "(calendar cycles + flags like holidays), and the model retrieves the "
-            "past slots that match on as many of them as possible."
+            f"Rows = hour of day, columns = the {ndays} days. The predicted day is "
+            "masked (you can't use it to predict itself), so the attention you see is "
+            "purely on the **past**. This is the point of attention in Chronos v2: a "
+            "moment carries **many signals at once** (calendar cycles + flags like "
+            "holidays), and the model retrieves the past that matches on as many as "
+            "possible."
         )
 
     st.divider()
