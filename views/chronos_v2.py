@@ -33,7 +33,8 @@ from src.models import make_forecasts
 from src.multivariate import correlations, generate_multivariate, reconstruct
 from src.viz import CATEGORICAL, COLORS, base_layout
 
-st.set_page_config(page_title="Chronos v2 — food delivery", page_icon="🍔", layout="wide")
+# NOTE: st.set_page_config is intentionally NOT called here — the entrypoint
+# (app.py) owns it under st.navigation, and calling it twice would raise.
 
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -81,7 +82,7 @@ tab_data, tab_models, tab_theory, tab_attn, tab_mv = st.tabs(
 # 1. DATA
 # ═════════════════════════════════════════════════════════════════════════════
 with tab_data:
-    st.subheader("📈 Synthetic food-delivery demand over a year")
+    st.subheader("📈 Synthetic food-delivery demand over two years")
     st.markdown(
         "The data is hourly and spans **two years**. Within **each day** there "
         "are two hills: a lunch peak around **11:30** (smaller) and a dinner peak "

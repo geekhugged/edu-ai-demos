@@ -34,9 +34,10 @@ example — forecasting hourly food-delivery orders. Five sections:
 
 ```
 edu-ai-demos/
-├── app.py                     # landing page
-├── pages/
-│   └── 1_🍔_Chronos_v2.py     # Chronos v2 demo (5 tabs)
+├── app.py                     # entrypoint — registers pages via st.navigation
+├── views/                     # one file per page (plain ASCII filenames)
+│   ├── home.py                # landing page
+│   └── chronos_v2.py          # Chronos v2 demo (5 tabs)
 ├── src/                       # all logic, no Streamlit (easy to test)
 │   ├── data.py                # synthetic food-delivery data generation
 │   ├── models.py              # zero-shot / fine-tuned + the WAPE metric
@@ -48,12 +49,16 @@ edu-ai-demos/
 └── requirements.txt
 ```
 
+> Pages are registered explicitly in `app.py` with `st.navigation` / `st.Page`,
+> and filenames are plain ASCII. This avoids the emoji-in-filename pitfall that
+> can make pages fail to appear on Streamlit Community Cloud.
+
 ## ➕ How to add your own demo
 
-1. Create a new file in `pages/`, e.g. `2_🤖_My_Demo.py`
-   (the number sets the menu order, the emoji is the icon).
-2. Put shared logic in `src/` — that keeps it reusable and testable.
-3. Use the palette from `src/viz.py` so all demos look like one system.
+1. Create a new file in `views/`, e.g. `my_demo.py` (plain ASCII name).
+2. Register it in `app.py`: add `st.Page("views/my_demo.py", title="My demo", icon="🤖")`.
+3. Put shared logic in `src/` — that keeps it reusable and testable.
+4. Use the palette from `src/viz.py` so all demos look like one system.
 
 ## ⚠️ Disclaimer
 
