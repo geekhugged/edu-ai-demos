@@ -139,18 +139,22 @@ def monthly_means(df: pd.DataFrame) -> pd.Series:
 
 
 def holiday_calendar(
-    start: str = "2025-11-01",
-    days: int = 61,
-    holidays: tuple[str, ...] = ("2025-11-27", "2025-12-20", "2025-12-25", "2025-12-26"),
+    start: str = "2025-01-01",
+    days: int = 365,
+    holidays: tuple[str, ...] = (
+        "2025-01-01", "2025-02-17", "2025-05-26", "2025-07-04", "2025-09-01",
+        "2025-11-27", "2025-12-20", "2025-12-25", "2025-12-26",
+    ),
 ) -> pd.DataFrame:
-    """An hourly calendar over ~2 months with a holiday flag.
+    """An hourly calendar over ~1 year with a holiday flag.
 
     Used by the "all signals at once" attention example: every hour of every day
     is a candidate moment carrying hour / weekday / month / holiday, so the demo
     can highlight the specific slots that match a query moment.
 
-    Default window Nov–Dec 2025 with a few marked holidays (one of them, Dec 20,
-    is a Saturday — so a "Saturday · December · holiday" query has an exact hit).
+    Default window: all of 2025 with a handful of marked holidays spread across
+    the year (Dec 20 is a Saturday, so a "Saturday · December · holiday" query
+    has an exact hit).
     """
     idx = pd.date_range(start, periods=days * 24, freq="h")
     hol = {pd.Timestamp(d).date() for d in holidays}

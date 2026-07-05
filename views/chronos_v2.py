@@ -422,11 +422,12 @@ with tab_attn:
     st.markdown("#### 🧭 All signals at once — hour + weekday + month + special day")
     st.markdown(
         "A real model doesn't attend along a **single** cycle — it combines them. "
-        "Below are **~2 months** of real calendar slots (every hour of every day, "
-        "Nov–Dec, with a few **holidays** marked). **Pick the day and hour you want "
-        "to predict** — it's highlighted with the amber line — and the heatmap shows "
-        "where its attention flows: every *other* slot that matches it across the "
-        "signals you enable lights up."
+        "Below is **1 year** of real calendar slots (every hour of every day, with "
+        "a few **holidays** marked). **Pick the day and hour you want to predict** — "
+        "it's highlighted with the amber line — and the heatmap shows where its "
+        "attention flows. Forecasting only sees the **past**, so everything from the "
+        "target day onward is masked out; only earlier slots that match across the "
+        "signals you enable light up."
     )
 
     cal = holiday_calendar()  # hourly, ~2 months, with a holiday flag
@@ -474,8 +475,9 @@ with tab_attn:
             query, cal["hour"].to_numpy(), cal["weekday"].to_numpy(),
             cal["month"].to_numpy(), cal["holiday"].to_numpy(), features,
         )
-        # you can't attend to the day you're predicting — mask it out
-        scores = np.where(day_mask, -np.inf, scores)
+        # forecasting only sees the past — mask the target day and everything after
+        future_mask = cal.index.date >= q_date
+        scores = np.where(future_mask, -np.inf, scores)
         weights = softmax(scores, temperature=ms_temp)
 
         # reshape to hour (rows) × day (cols) for a horizontal calendar heatmap
@@ -498,7 +500,7 @@ with tab_attn:
                         line=dict(color="white", width=1)),
             hovertemplate=f"predicting {q_label}<extra></extra>", showlegend=False,
         ))
-        fig_ms.update_xaxes(title=f"Date — {ndays} days (2 months)")
+        fig_ms.update_xaxes(title=f"Date — {ndays} days (1 year); target day onward is masked")
         fig_ms.update_yaxes(title="Hour of day", dtick=3)
         base_layout(fig_ms, height=440, title=f"Predicting {q_label} — where it attends")
         st.plotly_chart(fig_ms, width="stretch")
@@ -520,12 +522,12 @@ with tab_attn:
             f"light up; with all of them the attention narrows to the closest matches."
         )
         st.caption(
-            f"Rows = hour of day, columns = the {ndays} days. The predicted day is "
-            "masked (you can't use it to predict itself), so the attention you see is "
-            "purely on the **past**. This is the point of attention in Chronos v2: a "
-            "moment carries **many signals at once** (calendar cycles + flags like "
-            "holidays), and the model retrieves the past that matches on as many as "
-            "possible."
+            f"Rows = hour of day, columns = the {ndays} days of the year. Everything "
+            "from the target day onward is masked (a forecast can't use future data), "
+            "so the attention you see is purely on the **past**. This is the point of "
+            "attention in Chronos v2: a moment carries **many signals at once** "
+            "(calendar cycles + flags like holidays), and the model retrieves the "
+            "past that matches on as many as possible."
         )
 
     st.divider()
