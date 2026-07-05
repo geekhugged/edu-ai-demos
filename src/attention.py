@@ -124,6 +124,53 @@ def sentence_attention(tokens: list[str], focus_idx: int, temperature: float = 1
     return weights
 
 
+# ── "I want to eat / cake" — the simplest possible attention example ──────────
+# Toy 3-D meaning vectors on the axes [subject/desire, action, food].
+_EAT_VOCAB = {
+    "I":    np.array([1.0, 0.1, 0.0]),
+    "want": np.array([0.7, 0.5, 0.1]),
+    "to":   np.array([0.2, 0.3, 0.1]),
+    "eat":  np.array([0.1, 0.9, 0.7]),
+    "cake": np.array([0.0, 0.2, 1.0]),
+}
+# what the "next word" slot is looking for after "…eat": a food/object.
+_NEXT_WORD_QUERY = np.array([0.0, 0.3, 1.0])
+
+EAT_SENTENCE = ["I", "want", "to", "eat"]
+EAT_CAKE_SENTENCE = ["I", "want", "to", "eat", "cake"]
+
+
+def _embed_words(tokens: list[str]) -> np.ndarray:
+    return np.stack([_EAT_VOCAB.get(t, np.full(3, 0.3)) for t in tokens])
+
+
+def next_word_attention(tokens: list[str], temperature: float = 0.6) -> np.ndarray:
+    """Attention from the 'predict the next word' slot back over the sentence.
+
+    The query is a fixed 'looking for a food/object' vector — so on "I want to
+    eat" it lands mostly on **eat**, i.e. the model expects a food next (cake…).
+    """
+    vecs = _embed_words(tokens)
+    scores = (vecs @ _NEXT_WORD_QUERY) / np.sqrt(vecs.shape[1])
+    return softmax(scores, temperature=temperature)
+
+
+def word_self_attention(
+    tokens: list[str], focus_idx: int, temperature: float = 0.6, mask_self: bool = True,
+) -> np.ndarray:
+    """Self-attention of a chosen word over the others in the sentence.
+
+    With ``mask_self`` the word's own position is dropped, so the weights show
+    which *other* words it links to (e.g. "cake" → "eat").
+    """
+    vecs = _embed_words(tokens)
+    q = vecs[focus_idx]
+    scores = (vecs @ q) / np.sqrt(vecs.shape[1])
+    if mask_self:
+        scores[focus_idx] = -np.inf
+    return softmax(scores, temperature=temperature)
+
+
 def count_matching_signals(a: dict, b: dict, features: tuple[str, ...]) -> int:
     """How many of the enabled signals two moments share (exact match)."""
     keys = {"hour": "hour", "weekday": "weekday", "month": "month", "special": "holiday"}

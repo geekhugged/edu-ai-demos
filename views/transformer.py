@@ -11,7 +11,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src import general_theory as gt
-from src.attention import softmax
+from src.attention import (
+    EAT_CAKE_SENTENCE,
+    EAT_SENTENCE,
+    next_word_attention,
+    softmax,
+    word_self_attention,
+)
 from src.viz import COLORS, base_layout
 
 st.title("🧠 Transformer & attention mechanism")
@@ -24,6 +30,7 @@ st.markdown(
 tabs = st.tabs([
     "🧠 Transformer",
     "🎯 Attention",
+    "🍰 A tiny example",
     "🧩 Multi-head & positions",
     "🏗️ Encoder / decoder",
     "👥 Group attention",
@@ -75,12 +82,82 @@ with tabs[1]:
     )
 
 with tabs[2]:
-    st.markdown(gt.MULTIHEAD)
+    st.markdown("#### 🍰 The simplest example: two sentences")
+    st.markdown(
+        "Attention is easiest to *feel* on words. Compare:\n\n"
+        "> **“I want to eat”**  → the sentence isn't finished — what word comes next?\n\n"
+        "> **“I want to eat cake”**  → now it's complete.\n\n"
+        "Each word carries a tiny meaning vector (on the axes *subject/desire · "
+        "action · food*), and attention is just the softmax of how well a **query** "
+        "matches each word's **key**."
+    )
+
+    st.divider()
+    st.markdown("##### 1️⃣ Predicting the next word — “I want to eat ___”")
+    st.markdown(
+        "To guess the blank, the model's *next-word* query looks back over the "
+        "sentence. Watch **where it looks**:"
+    )
+    e1, e2 = st.columns([1, 2])
+    with e1:
+        t1 = st.slider("Attention sharpness", 0.2, 1.5, 0.5, 0.05, key="eat_t1")
+        st.caption("The query is 'what object am I about to eat?' — it should land "
+                   "on the verb **eat**.")
+    w_next = next_word_attention(EAT_SENTENCE, temperature=t1)
+    with e2:
+        fig1 = go.Figure(go.Bar(
+            x=EAT_SENTENCE, y=w_next,
+            marker=dict(color=w_next, colorscale="Blues", cmin=0, line=dict(width=0)),
+        ))
+        fig1.update_yaxes(title="Attention weight", range=[0, 1])
+        base_layout(fig1, height=300, title="next-word query → “I want to eat …”")
+        st.plotly_chart(fig1, width="stretch")
+    top1 = EAT_SENTENCE[int(np.argmax(w_next))]
+    st.success(
+        f"🔦 The query attends most to **{top1}** — the verb. So the model expects "
+        f"the next word to be **something you eat**: *cake*, pizza, sushi… That's "
+        f"attention picking the relevant context to make a prediction."
+    )
+
+    st.divider()
+    st.markdown("##### 2️⃣ The finished sentence — “I want to eat cake”")
+    st.markdown(
+        "Now every word can look at the others (**self-attention**). Pick a word "
+        "and see which *other* words it links to (its own position is hidden):"
+    )
+    s1, s2 = st.columns([1, 2])
+    with s1:
+        focus = st.select_slider(
+            "Selected word", options=list(range(len(EAT_CAKE_SENTENCE))),
+            value=EAT_CAKE_SENTENCE.index("cake"),
+            format_func=lambda i: EAT_CAKE_SENTENCE[i], key="eat_focus",
+        )
+        t2 = st.slider("Attention sharpness", 0.2, 1.5, 0.5, 0.05, key="eat_t2")
+    w_self = word_self_attention(EAT_CAKE_SENTENCE, focus, temperature=t2)
+    with s2:
+        fig2 = go.Figure(go.Bar(
+            x=EAT_CAKE_SENTENCE, y=w_self,
+            marker=dict(color=w_self, colorscale="Teal", cmin=0, line=dict(width=0)),
+        ))
+        fig2.update_yaxes(title="Attention weight", range=[0, 1])
+        base_layout(fig2, height=300,
+                    title=f"“{EAT_CAKE_SENTENCE[focus]}” looks at…")
+        st.plotly_chart(fig2, width="stretch")
+    top2 = EAT_CAKE_SENTENCE[int(np.argmax(w_self))]
+    st.info(
+        f"🔗 **{EAT_CAKE_SENTENCE[focus]}** attends most to **{top2}**. "
+        "Try **cake** → it points back at **eat** (the verb it's the object of); "
+        "try **eat** → it points at **cake** and **want**. Attention wires the "
+        "related words together — no rules, just learned meaning vectors."
+    )
 
 with tabs[3]:
-    st.markdown(gt.ENCODER_DECODER)
+    st.markdown(gt.MULTIHEAD)
 
 with tabs[4]:
+    st.markdown(gt.ENCODER_DECODER)
+
+with tabs[5]:
     st.markdown(gt.GROUP_ATTENTION)
     st.info(
         "See it in action: the Chronos v2 demo's **Multivariate series** tab "
