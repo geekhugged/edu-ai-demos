@@ -173,19 +173,43 @@ unchanged. So we add **positional information**:
 ENCODER_DECODER = r"""
 ### 🏗️ Encoder, decoder, and encoder-only
 
-A Transformer stack can be wired in a few ways:
+**The simplest way to picture it — a *reader* and a *writer*:**
 
-| Shape | What it does | Examples |
-|---|---|---|
-| **Encoder-only** | reads the input into rich representations, then an output head reads off the answer | BERT, **Chronos-2** |
-| **Decoder-only** | generates a sequence left-to-right, each token attending to the ones before | GPT-style LLMs |
-| **Encoder-decoder** | the encoder reads the input; the decoder generates the output while attending back to it (**cross-attention**) | T5, **Chronos v1 / Bolt** |
+- 📖 **Encoder = the reader.** It reads the whole input and *understands* it. It
+  doesn't produce any new text — it just "gets the gist."
+- ✍️ **Decoder = the writer.** It *produces* the output one piece at a time, each
+  new piece based on what it has written so far.
 
-- **Autoregressive** generation (decoder-style) produces one step at a time — accurate but slow for long horizons.
-- **Direct** output (encoder-only + a head) predicts the whole horizon at once — what Chronos-2 does for speed.
+**Three everyday examples make it click:**
 
-So the "encoder vs decoder" choice is really about **how the answer comes out**,
-not about whether attention is used — both use it.
+- 🌍 **Translate English → French** = *read **and** write* → **encoder-decoder**.
+  First **read** the whole English sentence to understand it (encoder), then
+  **write** the French one word by word (decoder), glancing back at the original
+  (**cross-attention**).  *“The cat is black” → “Le chat est noir.”*
+- 💬 **ChatGPT finishing your sentence** = *only writing* → **decoder-only**. There's
+  nothing separate to "read" — it just keeps guessing the next word, over and over.
+- 👍 **“Is this review positive or negative?”** or **“forecast next week's sales”**
+  = *read everything, give one answer* → **encoder-only**. No word-by-word writing:
+  read the input, output a label or a number. **Chronos-2 works exactly like
+  this** — read the history → produce the whole forecast in one go.
+
+---
+
+Same idea as a table:
+
+| Shape | In one line | Everyday example | Models |
+|---|---|---|---|
+| 📖 **Encoder-only** | read & understand → one answer | sentiment of a review; a sales forecast | BERT, **Chronos-2** |
+| ✍️ **Decoder-only** | write left-to-right, one token at a time | ChatGPT autocomplete | GPT-style LLMs |
+| 📖✍️ **Encoder-decoder** | read the input, then write the output | translation, summarization | T5, **Chronos v1 / Bolt** |
+
+- **Autoregressive** (decoder-style) writing produces one step at a time —
+  accurate but slow for long outputs.
+- **Direct** output (encoder-only + a small head) gives the whole answer at once —
+  what Chronos-2 does, which is a big reason it's fast.
+
+So "encoder vs decoder" is really just **reading vs writing** — *how the answer
+comes out*. It's **not** about attention: **all three use attention.**
 """
 
 GROUP_ATTENTION = r"""
