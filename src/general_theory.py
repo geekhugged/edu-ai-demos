@@ -31,6 +31,29 @@ that makes these two steps work well at scale. The other tabs unpack each piece;
 this one is the 30-second version.
 """
 
+CREATIVITY_NOTE = r"""
+**“Creativity” is the softmax _temperature_ — the very same dial that controls attention.**
+
+After the model scores every possible next word, it turns those scores $s_i$ into
+probabilities with a **softmax**, divided by a **temperature** $T$:
+
+$$p_i = \frac{e^{\,s_i/T}}{\sum_j e^{\,s_j/T}}$$
+
+- 🧊 **Low $T$ (→ 0) — cautious.** The biggest score dominates, so the model almost
+  always picks the *single most likely* word. Output is safe, predictable, and can
+  get repetitive.
+- ⚖️ **$T = 1$** — the model's raw probabilities, untouched.
+- 🔥 **High $T$ (→ ∞) — adventurous.** The scores flatten toward equal, so rarer
+  words get a real chance. Output is varied and surprising — but can wander into
+  nonsense.
+
+So "creativity" isn't a separate idea — it's simply **how sharp or soft the
+softmax is**. And it is *literally the same knob* as **attention sharpness** on the
+other tabs: low temperature = laser-focus on the single best key; high temperature
+= attention spread thinly across many. **One mechanism, two uses** — choosing the
+next word, and choosing what to pay attention to.
+"""
+
 # Beginner "predict the next word" demo: context → {next word: rough probability}.
 NEXT_WORD_EXAMPLES: dict[str, dict[str, float]] = {
     "The weather today is": {
@@ -72,6 +95,31 @@ exactly what makes *foundation models* possible.
 
 > For time series this is the whole point: the model can reach straight for the
 > relevant past — the matching hour, weekday, month — instead of letting it decay.
+"""
+
+RNN_VS_ATTENTION = r"""
+#### 🔁 RNN vs ⚡ Attention — the one picture to remember
+
+Before Transformers, sequences were read by **RNNs**: one step at a time,
+left→right, passing a little "memory" from each word to the next — like a
+**game of telephone (whisper down the line)**. To let word #1 influence word
+#50, its signal has to survive **49 whispers** — and it usually **fades**.
+
+**Attention** throws that out. Every word can look at **every other word
+directly, in a single step** — like everyone in a room being able to talk to
+anyone instantly. Distance stops mattering.
+
+|  | 🔁 **RNN** (telephone line) | ⚡ **Attention** (everyone in a room) |
+|---|---|---|
+| Reads the sequence | one step at a time, in order | all positions at once (in parallel) |
+| Word 1 → word N | signal hops through **N−1** cells, fading | **1 direct look**, any distance |
+| Long-range memory | weak — it forgets | strong — direct access |
+| Training speed | slow (must go in order) | fast (all at once) |
+
+**Why it matters for our forecast:** to use *"the same hour last week"* an RNN
+must carry that memory through **168 hourly steps**; attention just **jumps
+straight to it**. That direct reach is exactly what the attention simulations in
+the Chronos demo show.
 """
 
 ATTENTION = r"""

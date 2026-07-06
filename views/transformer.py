@@ -28,6 +28,54 @@ st.markdown(
     "beginner version, then dig deeper in the later tabs."
 )
 
+
+def _rnn_diagram(words: list[str]) -> go.Figure:
+    """RNN as a left→right chain: info hops from word to word."""
+    n = len(words)
+    xs = list(range(n))
+    fig = go.Figure()
+    for i in range(n - 1):  # consecutive arrows
+        fig.add_annotation(x=xs[i + 1], y=0, ax=xs[i], ay=0, xref="x", yref="y",
+                           axref="x", ayref="y", showarrow=True, arrowhead=3,
+                           arrowsize=1.1, arrowwidth=2, arrowcolor=COLORS["zero_shot"])
+    fig.add_trace(go.Scatter(
+        x=xs, y=[0] * n, mode="markers+text", text=words, textposition="top center",
+        textfont=dict(size=13), marker=dict(size=24, color=COLORS["accent"]),
+        hoverinfo="skip", showlegend=False))
+    fig.update_xaxes(visible=False, range=[-0.6, n - 0.4])
+    fig.update_yaxes(visible=False, range=[-0.9, 1.0])
+    base_layout(fig, height=240, title="🔁 RNN — whisper down the line")
+    fig.add_annotation(x=(n - 1) / 2, y=-0.7, showarrow=False,
+                       text=f"word 1 → word {n}: {n - 1} hops (signal fades)",
+                       font=dict(color=COLORS["zero_shot"], size=13))
+    return fig
+
+
+def _attention_diagram(words: list[str]) -> go.Figure:
+    """Attention: the last word reaches every other word in one direct hop (arcs)."""
+    n = len(words)
+    xs = list(range(n))
+    last = n - 1
+    fig = go.Figure()
+    for i in range(n - 1):  # arc from each word up to the last word
+        t = np.linspace(0, 1, 24)
+        ax = xs[i] + t * (xs[last] - xs[i])
+        ay = 0.7 * 4 * t * (1 - t)
+        fig.add_trace(go.Scatter(x=ax, y=ay, mode="lines", hoverinfo="skip",
+                                 line=dict(color=COLORS["fine_tuned"], width=1.6),
+                                 showlegend=False))
+    fig.add_trace(go.Scatter(
+        x=xs, y=[0] * n, mode="markers+text", text=words, textposition="bottom center",
+        textfont=dict(size=13), marker=dict(size=24, color=COLORS["accent"]),
+        hoverinfo="skip", showlegend=False))
+    fig.update_xaxes(visible=False, range=[-0.6, n - 0.4])
+    fig.update_yaxes(visible=False, range=[-0.95, 1.0])
+    base_layout(fig, height=240, title="⚡ Attention — look at all at once")
+    fig.add_annotation(x=(n - 1) / 2, y=-0.8, showarrow=False,
+                       text="last word ← every word: 1 hop each",
+                       font=dict(color=COLORS["fine_tuned"], size=13))
+    return fig
+
 tabs = st.tabs([
     "🌱 The big idea",
     "🧠 Transformer",
@@ -75,9 +123,28 @@ with tabs[0]:
         f"it, then predicts *again* — that's how it writes whole sentences. **How** "
         f"it decides which earlier words matter is **attention** → next tabs."
     )
+    with st.expander("🌡️ What is “creativity” (temperature)?"):
+        st.markdown(gt.CREATIVITY_NOTE)
 
 with tabs[1]:
     st.markdown(gt.TRANSFORMER)
+    st.divider()
+    st.markdown(gt.RNN_VS_ATTENTION)
+    _words = ["The", "cat", "I", "saw", "was", "black"]
+    nwords = st.slider("Sentence length", 4, 6, 6, key="rnn_n",
+                       help="Grow the sentence and watch the RNN's path get longer "
+                            "while attention stays at one hop.")
+    ws = _words[:nwords]
+    d1, d2 = st.columns(2)
+    with d1:
+        st.plotly_chart(_rnn_diagram(ws), width="stretch")
+    with d2:
+        st.plotly_chart(_attention_diagram(ws), width="stretch")
+    st.caption(
+        "As the sentence grows, the RNN's path from the first word to the last "
+        "gets **longer** (and its memory weaker), while attention stays at a "
+        "**single hop** — that's the whole reason Transformers won."
+    )
 
 with tabs[2]:
     st.markdown(gt.ATTENTION)
