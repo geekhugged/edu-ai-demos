@@ -323,6 +323,16 @@ with tab_attn:
         "is a live simulation."
     )
 
+    st.image(
+        str(ROOT / "assets" / "chronos2_architecture.png"),
+        caption="The Chronos-2 architecture. Inside the repeated Transformer stack "
+                "(×N) sit the two attentions this section is about — Time Attention "
+                "(along the time axis) and Group Attention (across the target series "
+                "and their covariates). Input is scaled, patched and embedded; a "
+                "quantile head produces the forecast.",
+        width="stretch",
+    )
+
     with st.expander("👥 What Chronos-2 actually uses: **two** kinds of attention"):
         st.markdown(
             """
