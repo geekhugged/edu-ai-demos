@@ -24,10 +24,12 @@ st.title("🧠 Transformer & attention mechanism")
 st.markdown(
     "A short, model-agnostic tour of how Transformers work and what the "
     "**attention** mechanism actually computes — the ideas behind the Chronos "
-    "demo (and behind LLMs like ChatGPT). Click through the sections."
+    "demo (and behind LLMs like ChatGPT). **Start at 🌱 The big idea** for the "
+    "beginner version, then dig deeper in the later tabs."
 )
 
 tabs = st.tabs([
+    "🌱 The big idea",
     "🧠 Transformer",
     "🎯 Attention",
     "🍰 A tiny example",
@@ -37,9 +39,47 @@ tabs = st.tabs([
 ])
 
 with tabs[0]:
-    st.markdown(gt.TRANSFORMER)
+    st.markdown(gt.BIG_IDEA)
+    st.divider()
+    st.markdown("#### 🎲 Try it: predict the next word")
+    st.markdown(
+        "Pick the start of a sentence. The model gives a **probability to each "
+        "possible next word** and would pick a likely one — then repeat to write "
+        "the whole sentence."
+    )
+    ctx = st.selectbox("Beginning of a sentence…", list(gt.NEXT_WORD_EXAMPLES.keys()))
+    dist = gt.NEXT_WORD_EXAMPLES[ctx]
+    words = list(dist.keys())
+    probs = np.array(list(dist.values()), dtype=float)
+    n1, n2 = st.columns([1, 2])
+    with n1:
+        creativity = st.slider("Creativity (temperature)", 0.2, 2.0, 1.0, 0.1,
+                               key="nw_temp",
+                               help="Low = always the safest word; high = more "
+                                    "surprising, varied words.")
+        st.caption("Real models choose from ~50,000 words, not five — but the game "
+                   "is exactly this.")
+    # temperature reshaping: softmax(log p / T)
+    scaled = softmax(np.log(probs), temperature=creativity)
+    with n2:
+        fig_nw = go.Figure(go.Bar(
+            x=words, y=scaled,
+            marker=dict(color=scaled, colorscale="Blues", cmin=0, line=dict(width=0)),
+        ))
+        fig_nw.update_yaxes(title="probability", range=[0, 1])
+        base_layout(fig_nw, height=300, title=f"“{ctx} ___”  →  next word")
+        st.plotly_chart(fig_nw, width="stretch")
+    best = words[int(np.argmax(scaled))]
+    st.success(
+        f"🔮 Most likely next word: **{best}**  →  “{ctx} **{best}**”. A model adds "
+        f"it, then predicts *again* — that's how it writes whole sentences. **How** "
+        f"it decides which earlier words matter is **attention** → next tabs."
+    )
 
 with tabs[1]:
+    st.markdown(gt.TRANSFORMER)
+
+with tabs[2]:
     st.markdown(gt.ATTENTION)
     st.divider()
     st.markdown("#### 🕹️ Feel the softmax")
@@ -81,7 +121,7 @@ with tabs[1]:
         f"the single best key."
     )
 
-with tabs[2]:
+with tabs[3]:
     st.markdown("#### 🍰 The simplest example: two sentences")
     st.markdown(
         "Attention is easiest to *feel* on words. Compare:\n\n"
@@ -151,13 +191,13 @@ with tabs[2]:
         "related words together — no rules, just learned meaning vectors."
     )
 
-with tabs[3]:
+with tabs[4]:
     st.markdown(gt.MULTIHEAD)
 
-with tabs[4]:
+with tabs[5]:
     st.markdown(gt.ENCODER_DECODER)
 
-with tabs[5]:
+with tabs[6]:
     st.markdown(gt.GROUP_ATTENTION)
     st.info(
         "See it in action: the Chronos v2 demo's **Multivariate series** tab "

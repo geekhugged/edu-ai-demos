@@ -4,6 +4,53 @@ Reused by the standalone "Transformer & Attention" page. Kept separate from the
 Chronos-specific theory so it can back any demo.
 """
 
+BIG_IDEA = r"""
+### 🌱 The big idea — a Transformer is a "next-word machine"
+
+You already use one every day: **phone autocomplete** and **ChatGPT** are
+Transformers. Strip away the jargon and the whole job is astonishingly simple:
+
+> **Read the words so far → guess the *next* word → repeat.**
+
+That's it. To write a sentence, the model predicts one word, adds it, and predicts
+again — over and over. "Understanding," "answering," "translating" all fall out of
+doing this next-word game extremely well, on a model trained on a huge slice of
+the internet.
+
+**Two questions make the whole thing work:**
+
+1. **Which word comes next?** The model outputs a **probability for every possible
+   word** and picks a likely one. Try the little predictor below 👇
+2. **Which earlier words should it look at to decide?** That's the **attention**
+   mechanism — the star of this page. Intuition: to finish *"I want to eat ___"*
+   the model **pays attention to "eat"** and expects a food. It highlights the
+   *relevant* words and ignores the rest.
+
+Everything else — layers, multi-head, positions, encoders/decoders — is machinery
+that makes these two steps work well at scale. The other tabs unpack each piece;
+this one is the 30-second version.
+"""
+
+# Beginner "predict the next word" demo: context → {next word: rough probability}.
+NEXT_WORD_EXAMPLES: dict[str, dict[str, float]] = {
+    "The weather today is": {
+        "sunny": 0.34, "cold": 0.22, "rainy": 0.20, "nice": 0.14, "hot": 0.10,
+    },
+    "I want to eat": {
+        "pizza": 0.30, "cake": 0.25, "sushi": 0.20, "lunch": 0.15, "something": 0.10,
+    },
+    "Machine learning is": {
+        "powerful": 0.30, "hard": 0.22, "fun": 0.20, "everywhere": 0.16, "math": 0.12,
+    },
+    "Once upon a": {
+        "time": 0.86, "dream": 0.06, "day": 0.05, "star": 0.03,
+    },
+    "The cat sat on the": {
+        "mat": 0.40, "sofa": 0.24, "floor": 0.20, "roof": 0.10, "table": 0.06,
+    },
+}
+
+
 TRANSFORMER = r"""
 ### 🧠 What is a Transformer?
 
